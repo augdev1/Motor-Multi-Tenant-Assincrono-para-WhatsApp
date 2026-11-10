@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ia_wpp_postgres_prod
+    restart: always
+    networks:
+      - bot-network
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ia_wpp_redis_prod
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
+    networks:
+      - bot-network
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  evolution-api:
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.1.2}
+    container_name: ia_wpp_evolution_prod
+    restart: always
+    networks:
+      - bot-network
+    environment:
+      - SERVER_URL=https://${DOMAIN_EVOLUTION}
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - DATABASE_ENABLED=false
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=${REDIS_URL}
+      - CACHE_REDIS_PREFIX_KEY=evolution_prod
+      - LOG_LEVEL=ERROR,WARN,INFO
+      - DEL_INSTANCE=false
+      - CONFIG_SESSION_PHONE_CLIENT=ia_wpp_prod
+      - CONFIG_SESSION_PHONE_NAME=Chrome_Linux
+      - QRCODE_LIMIT=30
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - evolution_prod_instances:/evolution/instances
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ia_wpp_api_prod
+    restart: always
+    networks:
+      - bot-network
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - REDIS_URL=${REDIS_URL}
+      - EVOLUTION_API_URL=http://evolution-api:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ia_wpp_caddy_prod
+    restart: always
+    networks:
+      - bot-network
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN_API=${DOMAIN_API}
+      - DOMAIN_EVOLUTION=${DOMAIN_EVOLUTION}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - evolution-api
+
+volumes:
+  postgres_prod_data:
+    name: ia_wpp_postgres_prod_data
+  redis_prod_data:
+    name: ia_wpp_redis_prod_data
+  evolution_prod_instances:
+    name: ia_wpp_evolution_prod_instances
+  caddy_data:
+    name: ia_wpp_caddy_data
+  caddy_config:
+    name: ia_wpp_caddy_config
+
+networks:
+  bot-network:
+    name: bot-network-prod
+    driver: bridge
