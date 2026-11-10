@@ -65,3 +65,4 @@ def log_audit_event(
         f"[AUDIT] {event_type} | Tenant: {company_id or 'N/A'} | Phone: {phone_number or 'N/A'}",
         extra={"audit_data": audit_data}
     )
+
