@@ -98,7 +98,7 @@ O microsservico foi concebido sob os principios de Clean Architecture, Orientaca
 - O recuperador `get_chat_history` implementa uma janela deslizante retornando as ultimas N mensagens (padrao: 6 turnos) ordenadas cronologicamente, convertendo-as para `HumanMessage` e `AIMessage` do ecossistema LangChain.
 
 ### Camada 6: Raciocinio Cognitivo e Visao Multimodal
-- **Inferencia com Gemini 2.5 Flash:** O noh cognitivo instancia `ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_version="v1beta")`, permitindo API Keys proprias por empresa armazenadas em `Company.settings["gemini_api_key"]`.
+- **Inferencia com Gemini 2.5 Flash:** O nó cognitivo instancia `ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_version="v1beta")`, permitindo API Keys proprias por empresa armazenadas em `Company.settings["gemini_api_key"]`.
 - **Auditoria Multimodal de Comprovantes Pix (Gemini Vision):**
   - Quando o cliente envia imagem ou documento no WhatsApp, o sistema captura a midia via Evolution API e executa extracao visual estruturada.
   - O modelo identifica o nome do pagador bancario, valor, data/hora e codigo de transacao.
