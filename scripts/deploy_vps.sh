@@ -83,10 +83,12 @@ ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 
-# Portas públicas estritamente permitidas
+# Portas públicas permitidas
 ufw allow 22/tcp comment 'SSH seguro'
 ufw allow 80/tcp comment 'HTTP Caddy ACME'
 ufw allow 443/tcp comment 'HTTPS Caddy SSL'
+ufw allow 8000/tcp comment 'FastAPI Engine (Modo Teste por IP)'
+ufw allow 8080/tcp comment 'Evolution API (Modo Teste por IP)'
 
 # Ativa o firewall sem derrubar sessão SSH ativa
 ufw --force enable
@@ -123,3 +125,4 @@ echo "    2. Clone seu repositório ou copie os arquivos"
 echo "    3. Configure o arquivo .env (baseado em .env.prod.example)"
 echo "    4. Execute: bash scripts/start_prod.sh"
 echo "======================================================================"
+

@@ -1,0 +1,96 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ia_wpp_postgres
+    restart: always
+    networks:
+      - bot-network
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_seguro_123}
+      POSTGRES_DB: ${POSTGRES_DB:-whatsapp_engine}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-whatsapp_engine}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ia_wpp_redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - bot-network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  evolution-api:
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:latest}
+    container_name: ia_wpp_evolution
+    restart: always
+    networks:
+      - bot-network
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_URL=http://${SERVER_IP:-localhost}:8080
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-secret-token-123}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - DATABASE_ENABLED=false
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379/1
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - LOG_LEVEL=ERROR,WARN,INFO
+      - DEL_INSTANCE=false
+      - CONFIG_SESSION_PHONE_CLIENT=ia_wpp_test
+      - CONFIG_SESSION_PHONE_NAME=Chrome_Linux
+      - QRCODE_LIMIT=30
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - evolution_instances:/evolution/instances
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ia_wpp_api
+    restart: always
+    networks:
+      - bot-network
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres_seguro_123}
+      - POSTGRES_DB=${POSTGRES_DB:-whatsapp_engine}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - EVOLUTION_API_URL=http://evolution-api:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-secret-token-123}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  evolution_instances:
+
+networks:
+  bot-network:
+    name: bot-network
+    driver: bridge
