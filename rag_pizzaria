@@ -1,0 +1,77 @@
+================================================================================
+
+BASE DE DADOS E CONHECIMENTO DA LANCHONETE & PIZZARIA (RAG)
+
+================================================================================
+
+1. PIZZAS TRADICIONAIS
+
+- Tamanhos e Fatias:
+  - Média (6 fatias): R$ 42,00
+
+  - Grande (8 fatias): R$ 52,00
+
+  - Família (12 fatias): R$ 65,00
+
+- Sabores:
+  - Calabresa: Molho de tomate especial, mussarela, calabresa fatiada, cebola e orégano.
+
+  - Mussarela: Molho de tomate, camada generosa de mussarela, rodelas de tomate e orégano.
+
+  - Frango com Catupiry: Peito de frango desfiado temperado, mussarela e legítimo Catupiry.
+
+  - Portuguesa: Presunto cozido, mussarela, ovos, cebola, ervilha e azeitonas pretas.
+
+  - Marguerita: Mussarela, rodelas de tomate fresco, manjericão fresco e azeite de oliva.
+
+  - Quatro Queijos: Mussarela, provolone, parmesão ralado e gorgonzola cremoso.
+
+2. PIZZAS ESPECIAIS E DOCES
+
+- Sabores Especiais:
+  - Carne de Sol na Nata (Grande): R$ 62,00 (Carne de sol desfiada, nata fresca, mussarela e cebola roxa).
+
+  - Bacon Crocante (Grande): R$ 58,00 (Mussarela, fatias crocantes de bacon e barbecue artesanal).
+
+- Sabores Doces:
+  - Chocolate com Morango (Média): R$ 45,00 (Chocolate ao leite derretido e fatias de morango fresco).
+
+  - Romeu e Julieta (Média): R$ 40,00 (Mussarela e goiabada cremosa).
+
+3. SANDUÍCHES E HAMBÚRGUERES ARTESANAIS
+
+- Todos acompanham maionese especial da casa.
+  - Smash Burguer Simples: R$ 18,00 (Pão brioche, blend 90g smash, cheddar derretido e picles).
+
+  - Smash Duplo Bacon: R$ 28,00 (Pão brioche, 2 blends 90g smash, cheddar duplo, fatias de bacon e cebola caramelizada).
+
+  - X-Salada Artesanal: R$ 22,00 (Pão tradicional, blend 150g, mussarela, alface americana, tomate e maionese verde).
+
+  - X-Tudo Monstro: R$ 32,00 (Pão brioche, blend 160g, queijo, presunto, bacon crocante, ovo, alface, tomate e batata palha).
+
+4. BEBIDAS E REFRIGERANTES
+
+- Coca-Cola (Original ou Zero): Lata 350ml R$ 6,00 | Garrafa 2 Litros R$ 14,00
+
+- Guaraná Antarctica: Lata 350ml R$ 6,00 | Garrafa 2 Litros R$ 13,00
+
+- Fanta Laranja ou Uva: Lata 350ml R$ 6,00
+
+- Sucos Naturais (Laranja ou Maracujá): Copo 500ml R$ 9,00
+
+- Água Mineral: Sem gás (500ml) R$ 4,00 | Com gás (500ml) R$ 5,00
+
+5. POLÍTICA DE ATENDIMENTO, ENTREGA E PAGAMENTO
+
+- Horário de Funcionamento: Terça a Domingo, das 18h às 23h30 (Segunda-feira fechado).
+
+- Tempo de Entrega: 35 a 50 minutos (horários de pico podem chegar a 60 minutos).
+
+- Taxas de Entrega: Bairros centrais R$ 6,00. Demais bairros atendidos: R$ 10,00 a R$ 14,00.
+
+- Pagamento:
+  - PIX (Chave CNPJ: 12.345.678/0001-90 - Sabor & Forno).
+
+  - Cartão de Crédito/Débito (motoboy leva a maquininha).
+
+  - Dinheiro (obrigatório verificar se precisa de troco e para quanto).

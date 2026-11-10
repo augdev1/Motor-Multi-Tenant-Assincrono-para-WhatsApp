@@ -1,0 +1,35 @@
+# Ambientes e Dependências
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Variáveis de Ambiente e Segredos
+.env
+*.env
+!*.env.example
+
+# Dados locais e Caches
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+data/
+postgres_data/
+redis_data/
+evolution_instances/
+
+# Mídia gerada em runtime
+qrcode.png
+
+# IDEs e Editores
+.vscode/
+.idea/
+*.swp
+*.swo
