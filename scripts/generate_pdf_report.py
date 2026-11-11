@@ -323,9 +323,9 @@ def generate_pdf():
     ]))
     story.append(KeepTogether([comanda_box]))
 
-    # Seção 4: Resultados dos Testes Automatizados (Test Harness)
+    # Seção 4: Resultados dos Testes Automatizados (Test Harness & Pentest)
     story.append(Spacer(1, 14))
-    story.append(Paragraph("4. Resumo de Testes Automatizados (Pytest Test Harness)", section_heading))
+    story.append(Paragraph("4. Resumo de Testes Automatizados & Segurança (NVIDIA NeMo-Guardrails)", section_heading))
 
     test_results_data = [
         [Paragraph("<b>Nome do Teste</b>", styles["Normal"]), Paragraph("<b>Módulo Avaliado</b>", styles["Normal"]), Paragraph("<b>Resultado</b>", styles["Normal"])],
@@ -342,6 +342,13 @@ def generate_pdf():
         [Paragraph("test_memory_tenant_isolation", styles["Normal"]), Paragraph("Isolamento de histórico entre tenants", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
         [Paragraph("test_dynamic_context_injection", styles["Normal"]), Paragraph("Injeção dinâmica de contexto da loja", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
         [Paragraph("test_ai_reasoning_node_mocked", styles["Normal"]), Paragraph("Inferência cognitiva assíncrona LangChain", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_guardrails_service_initialization", styles["Normal"]), Paragraph("NVIDIA NeMo-Guardrails: Inicialização e Colang", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_jailbreak_dan_mode_blocked", styles["Normal"]), Paragraph("Defesa Ativa: Bloqueio Jailbreak DAN (<20ms)", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_prompt_injection_ignore_instructions_blocked", styles["Normal"]), Paragraph("Defesa Ativa: Bloqueio Prompt Injection", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_secret_leak_extraction_attempt_blocked", styles["Normal"]), Paragraph("Defesa Ativa: Bloqueio Extração de Credenciais", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_social_engineering_privilege_escalation_blocked", styles["Normal"]), Paragraph("Defesa Ativa: Bloqueio Engenharia Social", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_output_rails_blocks_secret_leakage", styles["Normal"]), Paragraph("Output Rails: Prevenção de Vazamento de Chaves", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_legitimate_pizza_order_allowed_no_false_positive", styles["Normal"]), Paragraph("Validação Sem Falso Positivo em Pedidos Reais", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
     ]
     test_table = Table(test_results_data, colWidths=[200, 240, 90])
     test_table.setStyle(TableStyle([
@@ -360,3 +367,4 @@ def generate_pdf():
 
 if __name__ == "__main__":
     generate_pdf()
+

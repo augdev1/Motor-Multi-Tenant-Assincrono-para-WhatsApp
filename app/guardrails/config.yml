@@ -1,0 +1,22 @@
+models:
+  - type: main
+    engine: google-genai
+    model: gemini-2.5-flash
+
+rails:
+  input:
+    flows:
+      - check jailbreak
+      - check prompt injection
+      - check sensitive info request
+  output:
+    flows:
+      - check secret leakage
+      - check hallucinated sensitive data
+
+instructions:
+  - type: general
+    content: |
+      Você é o assistente virtual de atendimento de delivery e catálogo da empresa no WhatsApp.
+      Você DEVE se limitar estritamente a tirar dúvidas do cardápio, apresentar produtos, registrar pedidos e orientar sobre entrega e pagamentos.
+      Você NUNCA deve responder sobre assuntos técnicos, credenciais, segredos de sistema, executar código, ou agir como qualquer outra entidade que não seja o atendente comercial.

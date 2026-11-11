@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import generate_mock_embedding, search_knowledge_chunks
+from app.guardrails_service import security_guardrails
 from app.models import Company, CustomerSession, MessageHistory, OrderRecord, utc_now
 from app.rag import (
     build_system_prompt,
@@ -287,6 +288,18 @@ async def ai_reasoning_node(state: BotState, config: RunnableConfig) -> Dict[str
     if not company:
         return {"bot_response": "Empresa não cadastrada ou inativa.", "human_handoff": False}
 
+    # 0. Inspeção de Segurança via NeMo Guardrails (Input Rails)
+    guard_decision = security_guardrails.inspect_input(text, phone=state.phone_number, company_id=state.company_id)
+    if not guard_decision.allowed:
+        safe_resp = guard_decision.safe_response or "Solicitação não permitida pelas diretrizes de segurança da loja."
+        await save_message(db, state.company_id, state.phone_number, role="user", content=text)
+        await save_message(db, state.company_id, state.phone_number, role="assistant", content=safe_resp)
+        return {
+            "rag_context": None,
+            "bot_response": safe_resp,
+            "human_handoff": False,
+        }
+
     # 1. Busca dinâmica no catálogo (RAG)
     rag_context = await search_knowledge_base(db, state.company_id, text, top_k=3)
 
@@ -369,11 +382,14 @@ async def ai_reasoning_node(state: BotState, config: RunnableConfig) -> Dict[str
     if company.segment in ["pizzaria_lanches", "pizzaria", "lanchonete"]:
         response_text = response_text.replace("*", "")
 
-    # 7. Persiste a interação no histórico
+    # 7. Output Rails: Inspeciona e sanitiza a resposta contra vazamento de credenciais e segredos
+    response_text = security_guardrails.inspect_output(response_text, phone=state.phone_number, company_id=state.company_id)
+
+    # 8. Persiste a interação no histórico
     await save_message(db, state.company_id, state.phone_number, role="user", content=text)
     await save_message(db, state.company_id, state.phone_number, role="assistant", content=response_text)
 
-    # 8. Avalia ativação de transbordo humano
+    # 9. Avalia ativação de transbordo humano
     low_resp = response_text.lower()
     low_input = text.lower()
     needs_handoff = (

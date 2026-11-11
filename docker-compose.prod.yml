@@ -118,3 +118,4 @@ networks:
   bot-network:
     name: bot-network-prod
     driver: bridge
+

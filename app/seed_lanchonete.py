@@ -165,3 +165,4 @@ async def seed_lanchonete():
 
 if __name__ == "__main__":
     asyncio.run(seed_lanchonete())
+

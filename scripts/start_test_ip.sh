@@ -73,3 +73,4 @@ echo "      --api-url http://evolution-api:8080 \\"
 echo "      --api-key secret-token-123 \\"
 echo "      --webhook-url http://api:8000/webhook/evolution"
 echo "======================================================================"
+

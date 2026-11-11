@@ -21,6 +21,7 @@ dependencies = [
     "numpy>=1.26.0",
     "qrcode>=8.2",
     "pillow>=13.0.0",
+    "nemoguardrails>=0.24.1",
 ]
 
 [project.optional-dependencies]

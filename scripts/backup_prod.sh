@@ -43,3 +43,4 @@ echo ">>> Excluindo backups com mais de 7 dias de retenção..."
 find "${BACKUP_DIR}" -type f -name "backup_pg_*.sql.gz" -mtime +7 -delete
 
 echo ">>> [$(date)] Rotina de backup finalizada com sucesso."
+

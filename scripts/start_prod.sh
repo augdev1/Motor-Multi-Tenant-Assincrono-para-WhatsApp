@@ -68,3 +68,4 @@ echo ">>> DEPLOY DE PRODUÇÃO CONCLUÍDO COM SUCESSO!"
 echo ">>> Verifique os certificados SSL e logs do Caddy:"
 echo "    docker compose -f ${COMPOSE_FILE} logs -f caddy"
 echo "======================================================================"
+

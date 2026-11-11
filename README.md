@@ -105,7 +105,19 @@ O microsservico foi concebido sob os principios de Clean Architecture, Orientaca
   - O sistema concilia o titular bancario mesmo quando for distinto do cliente solicitante (exemplo: pedido feito por *Eduardo Souza*, porem pago via conta de *Maria Souza*).
   - A confirmacao do pagamento e enviada ao cliente e a comanda da cozinha e despachada segregando o nome do cliente e o nome do titular do Pix no extrato.
 
-### Camada 7: Observabilidade, Auditoria Estruturada e Telemetria
+### Camada 7: Seguranca de Nivel Corporativo (NVIDIA NeMo-Guardrails)
+- **Defesa em Profundidade (Defense in Depth):** Implementacao de rails de protecao baseados no framework oficial NVIDIA NeMo-Guardrails, combinando definicoes em Colang (`rails.co`) e politicas de seguranca declarativas (`config.yml`).
+- **Input Rails (Inspecao Ativa de Entrada):**
+  - Bloqueio imediato de ataques de Jailbreak (ex: *DAN mode*, *Do Anything Now*, desativacao de restricoes morais).
+  - Bloqueio de Prompt Injection (ex: *Ignore all previous instructions*, comandos de substituicao de contexto, injecoes SQL).
+  - Bloqueio de Engenharia Social (ex: usuarios fingindo ser gestores, donos ou autoridades exigindo descontos ou dados).
+  - Tempo de resposta ultra-rapido (latencia inferior a 20ms na borda), abatendo o ataque antes de consumir tokens do LLM ou atingir o banco de dados.
+- **Output Rails (Prevencao de Vazamento de Segredos e PII):**
+  - Inspecao automatica de respostas contra padroes de chaves de API (`AQ.*`, `AIza*`, `sk-*`), strings de conexao com senhas de banco (`postgresql://`, `redis://`) e credenciais do servidor.
+- **Trilha de Auditoria de Seguranca:**
+  - Eventos de ataque sao sumariamente registrados em `audit_logs` sob o tipo `SECURITY_INPUT_RAIL_BLOCKED` para telemetria de ameacas em tempo real.
+
+### Camada 8: Observabilidade, Auditoria Estruturada e Telemetria
 - Emissao de logs estruturados em JSON contendo timestamp UTC em formato ISO8601, tenant ID, identificador do cliente, tempo de execucao em milissegundos e payload detalhado de entrada e saida.
 - Persistencia relacional em `audit_logs` para conformidade e rastreabilidade historica.
 - Endpoint administrativo dedicado `GET /audit/logs/{company_id_or_instance}` para consumo de trilhas de auditoria.

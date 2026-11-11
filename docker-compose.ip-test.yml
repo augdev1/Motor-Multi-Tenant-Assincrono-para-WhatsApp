@@ -94,3 +94,4 @@ networks:
   bot-network:
     name: bot-network
     driver: bridge
+
