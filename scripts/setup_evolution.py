@@ -89,14 +89,15 @@ def configure_webhook(client: httpx.Client, base_url: str, api_key: str, instanc
             "byEvents": False,
             "base64": False,
             "events": [
-                "MESSAGES_UPSERT"
+                "MESSAGES_UPSERT",
+                "CONNECTION_UPDATE"
             ],
         }
     }
     print(f"🔗 Configurando Webhook da instância para '{webhook_url}'...")
     resp = client.post(f"{base_url}/webhook/set/{instance_name}", headers=headers, json=payload)
     if resp.status_code in (200, 201):
-        print("✅ Webhook configurado e eventos MESSAGES_UPSERT habilitados!")
+        print("✅ Webhook configurado com eventos MESSAGES_UPSERT e CONNECTION_UPDATE habilitados!")
         return True
     else:
         print(f"⚠️ Falha ao configurar Webhook ({resp.status_code}): {resp.text}")

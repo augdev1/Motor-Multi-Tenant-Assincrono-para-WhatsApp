@@ -2,7 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: ia_wpp_postgres
-    restart: unless-stopped
+    restart: always
     networks:
       - bot-network
     environment:
@@ -22,7 +22,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ia_wpp_redis
-    restart: unless-stopped
+    restart: always
     networks:
       - bot-network
     ports:
@@ -38,7 +38,7 @@ services:
   evolution:
     image: evoapicloud/evolution-api:latest
     container_name: ia_wpp_evolution
-    restart: unless-stopped
+    restart: always
     networks:
       - bot-network
     ports:
@@ -66,13 +66,14 @@ services:
         condition: service_healthy
     volumes:
       - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: ia_wpp_api
-    restart: unless-stopped
+    restart: always
     networks:
       - bot-network
     ports:
@@ -97,6 +98,7 @@ volumes:
   postgres_data:
   redis_data:
   evolution_instances:
+  evolution_store:
 
 networks:
   bot-network:

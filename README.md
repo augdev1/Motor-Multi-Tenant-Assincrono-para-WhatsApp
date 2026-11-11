@@ -249,12 +249,35 @@ tests/test_harness.py::test_ai_reasoning_node_mocked PASSED              [100%]
 | Metodo | Rota | Descricao |
 | :--- | :--- | :--- |
 | `GET` | `/health` | Verificacao de disponibilidade e integridade do servico. |
-| `POST` | `/webhook/evolution` | Endpoint receptor de eventos de mensageria da Evolution API v2 com deduplicacao, locks e orquestracao LangGraph. |
+| `POST` | `/webhook/evolution` | Endpoint receptor de eventos da Evolution API v2 (mensagens e status de conexao CONNECTION_UPDATE). |
+| `GET` | `/api/instances/health` | Monitoramento global de saude e disponibilidade das instancias WhatsApp. |
+| `GET` | `/api/companies/{id}/connection-status` | Status em tempo real, duracao de queda e alertas de reconexao por empresa. |
 | `GET` | `/audit/logs/{company_id}` | Consulta da trilha de auditoria e telemetria filtrada estritamente por tenant. |
 | `GET` | `/docs` | Documentacao interativa OpenAPI / Swagger UI. |
 
 ---
 
-## 8. Licenca e Autoria
+## 8. Boas Praticas e Alta Disponibilidade da Evolution API (99%+ Uptime)
+
+Para garantir resiliencia operacional e eliminar perda de atendimento por reinicializacoes ou falhas fisicas no aparelho do lojista, o sistema adota tres diretrizes mandatorias de producao:
+
+### 8.1. Reinicializacao Automatica (restart: always)
+Todos os servicos no `docker-compose.yml`, `docker-compose.prod.yml` e `docker-compose.ip-test.yml` possuem a diretiva `restart: always`. Em cenarios de oscilacao de memoria, parada nao planejada ou reinicializacao do host Linux (VPS), o daemon do Docker restabelece o gateway Evolution API, PostgreSQL e FastAPI em segundos.
+
+### 8.2. Persistencia Estrita de Sessao e Tokens WhatsApp
+Para que atualizacoes de containers ou reboots da VPS nao exijam nova leitura de QR Code pelo lojista, os diretorios criticos da sessao Baileys sao mapeados em volumes nomeados persistentes:
+- `/evolution/instances`: Armazena chaves de criptografia e credenciais multi-file-auth-state.
+- `/evolution/store`: Armazena cache de contatos e metadados de chats.
+- Rotina automatica de backup diario em `scripts/backup_prod.sh` exportando os dados de sessao em arquivos comprimidos com retencao de 7 dias.
+
+### 8.3. Monitoramento Ativo de Queda (CONNECTION_UPDATE)
+O gateway Evolution API despacha eventos de conectividade (`CONNECTION_UPDATE`) para o backend:
+- **Deteccao de Queda:** Estados como `close`, `refused` ou `disconnected` acionam o servico `ConnectionMonitorService`, gravando eventos `WHATSAPP_DISCONNECTED_ALERT` no banco, persistindo alerta critico no Redis e calculando a duracao exata de inatividade.
+- **Restabelecimento:** O estado `open` limpa flags de alerta e registra o retorno da operacao.
+- **Supervisao Centralizada:** Operadores podem consultar a saude de todas as conexoes via `GET /api/instances/health`.
+
+---
+
+## 9. Licenca e Autoria
 
 Projeto concebido para operacoes de alta demanda, arquitetado sob rigorosos padroes de engenharia de software para microsservicos corporativos assincronos.

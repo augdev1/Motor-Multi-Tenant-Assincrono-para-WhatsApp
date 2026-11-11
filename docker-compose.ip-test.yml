@@ -58,6 +58,7 @@ services:
         condition: service_healthy
     volumes:
       - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
 
   api:
     build:
@@ -89,6 +90,7 @@ volumes:
   postgres_data:
   redis_data:
   evolution_instances:
+  evolution_store:
 
 networks:
   bot-network:

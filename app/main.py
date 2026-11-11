@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.connection_monitor import connection_monitor
 from app.database import (
     DistributedLock,
     EventDeduplicator,
@@ -109,6 +110,10 @@ async def evolution_webhook(
     Aplica deduplicação de eventos, locks distribuídos e máquina de estados LangGraph.
     """
     start_time = time.time()
+
+    # 0. Monitoramento de Queda e Conectividade do WhatsApp (CONNECTION_UPDATE)
+    if payload.is_connection_update():
+        return await connection_monitor.handle_connection_update(payload, db, redis)
 
     # 1. Filtro de mensagens emitidas pelo bot e de grupos do WhatsApp
     if payload.is_from_me() or payload.is_group():
@@ -407,3 +412,51 @@ async def get_audit_trail(
             for l in logs
         ]
     }
+
+
+@app.get("/api/companies/{company_id_or_instance}/connection-status")
+async def get_company_connection_status(
+    company_id_or_instance: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retorna o status de conexão em tempo real da instância WhatsApp da empresa.
+    Informa se está conectado (open), desconectado (close/refused), tempo de queda e se requer alerta.
+    """
+    stmt = select(Company).where(
+        (Company.id == company_id_or_instance) | (Company.instance_name == company_id_or_instance)
+    )
+    res = await db.execute(stmt)
+    company = res.scalar_one_or_none()
+
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa não localizada.")
+
+    return connection_monitor.get_status_summary(company)
+
+
+@app.get("/api/instances/health")
+async def get_all_instances_health(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retorna o relatório global de saúde de todas as instâncias WhatsApp ativas.
+    Permite aos operadores detectar rapidamente lojistas desconectados ou sem bateria.
+    """
+    stmt = select(Company).where(Company.active.is_(True))
+    res = await db.execute(stmt)
+    companies = res.scalars().all()
+
+    summaries = [connection_monitor.get_status_summary(c) for c in companies]
+    offline_count = sum(
+        1 for s in summaries if not s["is_connected"] and s["connection_status"] in connection_monitor.OFFLINE_STATES
+    )
+
+    return {
+        "total_instances": len(summaries),
+        "online_instances": len(summaries) - offline_count,
+        "offline_instances": offline_count,
+        "requires_attention": offline_count > 0,
+        "instances": summaries,
+    }
+

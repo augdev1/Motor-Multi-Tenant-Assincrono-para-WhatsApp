@@ -37,6 +37,30 @@ class EvolutionMessagePayload(BaseModel):
             return str(self.data.get("instance", ""))
         return ""
 
+    def is_connection_update(self) -> bool:
+        """Verifica se o webhook é um evento de atualização do status de conexão do WhatsApp."""
+        evt = (self.event or "").upper().replace(".", "_")
+        if evt == "CONNECTION_UPDATE":
+            return True
+        if self.data and isinstance(self.data, dict):
+            # Formatos complementares da Evolution API v2 para status de conexão
+            if ("state" in self.data or "connection" in self.data) and not self.data.get("key"):
+                return True
+        return False
+
+    def get_connection_state(self) -> str:
+        """Extrai o estado da conexão (open, close, connecting, refused, etc.)."""
+        if not self.data or not isinstance(self.data, dict):
+            return "unknown"
+        state = self.data.get("state") or self.data.get("status") or self.data.get("connection") or ""
+        return str(state).lower().strip()
+
+    def get_connection_status_reason(self) -> Optional[Any]:
+        """Extrai o código ou motivo de erro de desconexão (ex: 401, 408, 428, 500)."""
+        if not self.data or not isinstance(self.data, dict):
+            return None
+        return self.data.get("statusReason") or self.data.get("reason")
+
     def get_message_id(self) -> str:
         """Recupera o ID único da mensagem para idempotência."""
         if not self.data or not isinstance(self.data, dict):

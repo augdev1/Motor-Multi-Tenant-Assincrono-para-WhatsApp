@@ -349,6 +349,10 @@ def generate_pdf():
         [Paragraph("test_social_engineering_privilege_escalation_blocked", styles["Normal"]), Paragraph("Defesa Ativa: Bloqueio Engenharia Social", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
         [Paragraph("test_output_rails_blocks_secret_leakage", styles["Normal"]), Paragraph("Output Rails: Prevenção de Vazamento de Chaves", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
         [Paragraph("test_legitimate_pizza_order_allowed_no_false_positive", styles["Normal"]), Paragraph("Validação Sem Falso Positivo em Pedidos Reais", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_connection_update_close_triggers_critical_alert", styles["Normal"]), Paragraph("Alta Disp.: Alerta de Desconexão (CONNECTION_UPDATE)", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_connection_update_open_restores_health", styles["Normal"]), Paragraph("Alta Disp.: Recuperação e Restauração de Conexão", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_api_connection_status_and_health_endpoints", styles["Normal"]), Paragraph("Supervisão: Endpoints de Saúde e Status em Tempo Real", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_docker_compose_files_have_restart_always", styles["Normal"]), Paragraph("Resiliência: Validação de restart: always e Volumes", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
     ]
     test_table = Table(test_results_data, colWidths=[200, 240, 90])
     test_table.setStyle(TableStyle([

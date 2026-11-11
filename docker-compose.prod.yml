@@ -57,6 +57,7 @@ services:
         condition: service_healthy
     volumes:
       - evolution_prod_instances:/evolution/instances
+      - evolution_prod_store:/evolution/store
 
   api:
     build:
@@ -109,6 +110,8 @@ volumes:
     name: ia_wpp_redis_prod_data
   evolution_prod_instances:
     name: ia_wpp_evolution_prod_instances
+  evolution_prod_store:
+    name: ia_wpp_evolution_prod_store
   caddy_data:
     name: ia_wpp_caddy_data
   caddy_config:
