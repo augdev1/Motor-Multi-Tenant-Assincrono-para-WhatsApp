@@ -1,71 +1,81 @@
 # Motor Multi-Tenant Assincrono para WhatsApp
 
-Microsservico assincrono de alto desempenho desenvolvido em Python 3.12+, FastAPI, LangGraph, PostgreSQL (pgvector) e Redis, projetado para automacao conversacional, recuperacao de contexto vetorial (RAG), conciliacao financeira de pagamentos e fechamento de pedidos via WhatsApp com integracao a Evolution API v2.
+Microsservico assincrono de alto desempenho desenvolvido em Python 3.12+, FastAPI, LangGraph, PostgreSQL (pgvector com indice HNSW), Redis e Alembic, projetado para automacao conversacional em escala comercial, recuperacao semantica de contexto vetorial (RAG), conciliacao financeira de pagamentos e fechamento de pedidos via WhatsApp com integracao a Evolution API v2.
 
-O sistema opera com isolamento rigoroso multi-tenant, permitindo que multiplas empresas de segmentos distintos (distribuidoras, lanchonetes e pizzarias, depositos de construcao, farmacias) compartilhem a infraestrutura com segregacao logica total em nivel de banco de dados, sessoes, cache, historico e colecoes vetoriais.
+O sistema opera com isolamento rigoroso multi-tenant, permitindo que dezenas de empresas de segmentos distintos (distribuidoras, lanchonetes e pizzarias, depositos de construcao, farmacias) compartilhem a infraestrutura com segregacao logica total em nivel de banco de dados, filas, locks, sessoes, cache, historico e colecoes vetoriais.
 
 ---
 
 ## 1. Visao Geral da Arquitetura e Engenharia de Software
 
-O microsservico foi concebido sob os principios de Clean Architecture, Orientacao a Eventos e Modelagem de Estados Deterministicos via Grafos Direcionados Aciclicos (DAGs). A arquitetura desacopla as responsabilidades em oito camadas operacionais:
+O microsservico foi concebido sob os principios de Clean Architecture, Orientacao a Eventos, Desacoplamento por Fila (Producer/Worker) e Modelagem de Estados Deterministicos via Grafos Direcionados Aciclicos (DAGs). A arquitetura desacopla as responsabilidades nas seguintes camadas operacionais:
 
 ```text
                                 [ WhatsApp Cliente ]
-                                         │
-                                         ▼
+                                         |
+                                         v
                             [ Evolution API v2 Gateway ]
-                                         │
-                               (Webhook HTTP POST)
-                                         │
-                                         ▼
+                                         |
+                          (Webhook HTTP POST + SSL Caddy)
+                                         |
+                                         v
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Camada 1: Ingestao, Deduplicacao e Controle de Concorrencia                     │
-│ - FastAPI Endpoint (/webhook/evolution)                                         │
+│ Camada 1: Seguranca de Borda, Ingestao e Desacoplamento Assincrono              │
+│ - Validacao Criptografica (X-Webhook-Secret via hmac.compare_digest)            │
+│ - Tratamento Prioritario de Conectividade (CONNECTION_UPDATE)                   │
 │ - Redis Event Deduplication (SET NX EX, TTL 300s por message_id)                │
+│ - Producer Queue (<20ms): LPUSH em queue:webhooks:pending -> HTTP 200 queued    │
+└──────────────────────────────────────┬──────────────────────────────────────────┘
+                                       |
+                                       v
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Camada 2: Worker Dedicado, Locks Distribuidos e Tolerancia a Falhas             │
+│ - Consumo Atomico via BLMOVE (pending -> processing -> ACK ou DLQ)              │
 │ - Redis Distributed Lock (chave atomica por tenant + usuario, lease 10s)        │
+│ - Resolucao e Isolamento Multi-Tenant (instance_name -> company_id UUID)        │
 └──────────────────────────────────────┬──────────────────────────────────────────┘
-                                       │
-                                       ▼
+                                       |
+                                       v
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Camada 2: Resolucao e Isolamento Multi-Tenant                                   │
-│ - Mapeamento instance_name -> company_id (UUID) -> owner_id                     │
-│ - Segregacao relacional estrita (SQLAlchemy 2.0 Async Session)                  │
+│ Camada 3: Seguranca Cognitiva (NVIDIA NeMo-Guardrails)                          │
+│ - Input Rails (<20ms): Jailbreak, Prompt Injection, SQLi, Engenharia Social     │
+│ - Definicoes Colang 1.0 (rails.co) e Politicas Declarativas (config.yml)        │
+│ - Output Rails: Prevencao ativa contra vazamento de API Keys e URIs             │
 └──────────────────────────────────────┬──────────────────────────────────────────┘
-                                       │
-                                       ▼
+                                       |
+                                       v
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Camada 3: Motor de Estado Conversacional (LangGraph StateGraph)                  │
+│ Camada 4: Motor de Estado Conversacional (LangGraph StateGraph)                 │
 │ - Roteamento Adaptativo por Segmento (Pizzaria/Lanches, Delivery, Balcao)       │
-│ - Transicoes de Estado: inicio -> coletando_itens -> endereco -> pagamento     │
+│ - Transicoes de Estado: inicio -> coletando_itens -> endereco -> pagamento      │
 │ - Deteccao e Ativacao de Transbordo Humano (human_handoff = True)               │
 └───────────────────┬─────────────────────────────────────────┬───────────────────┘
-                    │                                         │
-                    ▼                                         ▼
+                    |                                         |
+                    v                                         v
 ┌──────────────────────────────────────┐  ┌───────────────────────────────────────┐
-│ Camada 4: Memoria Deslizante e RAG   │  │ Camada 5: Visao Multimodal (Receipt)  │
-│ - MessageHistory (Sliding Window N=6)│  │ - Identificacao de Midia (imageMessage│
-│ - knowledge_chunks (pgvector 768 dim)│  │ - Gemini 2.5 Flash Vision             │
-│ - Similaridade Cosseno (<=>)         │  │ - Auditoria de Comprovante Pix        │
-│ - Injecao Dinamica de System Prompt  │  │ - Deteccao de Pagador vs Cliente      │
+│ Camada 5: Memoria & RAG pgvector     │  │ Camada 6: Visao Multimodal (Receipt)  │
+│ - MessageHistory (Sliding Window N=6)│  │ - Captura de Midia (imageMessage)     │
+│ - knowledge_chunks VECTOR(768) HNSW  │  │ - Gemini 2.5 Flash Vision             │
+│ - Embeddings gemini-embedding-001    │  │ - Auditoria de Comprovante Pix        │
+│ - Distancia Cosseno (<=>) no SQL     │  │ - Reconciliacao Pagador vs Cliente    │
 └───────────────────┬──────────────────┘  └───────────────────┬───────────────────┘
-                    │                                         │
+                    |                                         |
                     └────────────────────┬────────────────────┘
-                                         │
-                                         ▼
+                                         |
+                                         v
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Camada 6: Raciocinio Cognitivo (LangChain + Gemini 2.5 Flash)                   │
-│ - Inferencias contextuais com fallbacks deterministicos                         │
-│ - Sanitizacao de respostas e remocao de marcadores rigidos                      │
-│ - Despacho Assincrono de Notificacao para Cozinha/Gestor via WhatsApp           │
+│ Camada 7: Raciocinio Cognitivo e Despacho Resiliente (Evolution Client)         │
+│ - LangChain + Gemini 2.5 Flash com fallbacks deterministicos                    │
+│ - Envio WhatsApp com Retry + Exponential Backoff (1s, 2s, 4s)                   │
+│ - Despacho Assincrono de Comanda de Producao para Cozinha/Gestor                │
 └──────────────────────────────────────┬──────────────────────────────────────────┘
-                                       │
-                                       ▼
+                                       |
+                                       v
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Camada 7: Observabilidade, Auditoria Estruturada e Persistencia                 │
-│ - Registro em audit_logs (JSON estruturado, latency ms, event_type)            │
-│ - Emissao de logs padrao ISO8601 em stdout e arquivos rotativos                 │
-│ - Endpoint de Auditoria (/audit/logs/{company_id})                              │
+│ Camada 8: Observabilidade, Monitoramento de Queda e Persistencia                │
+│ - Registro em audit_logs (JSON estruturado, latency ms, event_type)             │
+│ - Monitoramento CONNECTION_UPDATE + Push Alerts (ALERT_WEBHOOK_URL + Cooldown)  │
+│ - Migracoes Versionadas Alembic (alembic upgrade head)                          │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,60 +83,43 @@ O microsservico foi concebido sob os principios de Clean Architecture, Orientaca
 
 ## 2. Detalhamento Tecnico das Camadas
 
-### Camada 1: Ingestao e Controle de Concorrencia Distribuida
-- **Deduplicacao de Eventos:** Cada webhook entrante possui um identificador unico (`message_id`). O sistema executa atomicamente `SET NX EX` no Redis sob a chave `dedup:msg:{message_id}` com expiracao de 300 segundos. Mensagens reenviadas ou duplicadas pelo gateway da Evolution API sao descartadas com status HTTP 200 `{ "status": "ignored", "reason": "duplicate_event" }`, impedindo execucoes redundantes.
-- **Distributed Lock por Cliente:** Para evitar condicoes de corrida quando o cliente envia multiplas mensagens sequenciais em milissegundos, o sistema adquire uma trava distribuida no Redis sob o padrao `lock:company:{company_id}:user:{phone_number}` com lease timeout de 10 segundos. Em caso de colisao concorrente, responde imediatamente HTTP 429 `{ "status": "busy", "reason": "lock_contention" }` e cancela a deduplicacao previa para permitir retentativas do gateway.
+### Camada 1: Seguranca de Borda e Ingestao Assincrona
+- **Autenticacao Criptografica (`app/security.py`):** O endpoint `POST /webhook/evolution` valida o segredo compartilhado (`WEBHOOK_SECRET`) usando comparacao em tempo constante (`hmac.compare_digest`) via header `X-Webhook-Secret`, `apikey` ou query param `token`. Endpoints administrativos exigem `ADMIN_API_KEY` via `X-Admin-Key` ou `Authorization: Bearer`.
+- **Deduplicacao de Eventos:** Cada webhook entrante possui um identificador unico (`message_id`). O sistema executa atomicamente `SET NX EX` no Redis sob a chave `dedup:msg:{message_id}` com expiracao de 300 segundos, descartando entregas duplicadas com status HTTP 200 `{ "status": "ignored", "reason": "duplicate_event" }`.
+- **Desacoplamento Producer/Worker (`ASYNC_QUEUE_ENABLED=true`):** A API valida, deduplica na borda e publica o evento na fila `queue:webhooks:pending` via `LPUSH`, retornando `200 OK {"status": "queued"}` em menos de 20ms sem bloquear conexoes HTTP durante chamadas a modelos de IA.
 
-### Camada 2: Isolamento e Segregacao Multi-Tenant
-- A identificacao do tenant e resolvida a partir de `instance_name` (chave unica indexada na tabela `companies`).
-- O identificador `company_id` (UUID v4) atua como chave de particao logica em todas as consultas relacionais (`customer_sessions`, `order_records`, `message_history`, `audit_logs`).
-- A propriedade `owner_id` permite segregacao administrativa, vinculando grupos de empresas a socios ou gestores especificos sem vazamento cruzado.
+### Camada 2: Worker Dedicado, Locks e Isolamento Multi-Tenant
+- **Consumo Confiavel (`app/queue_worker.py`):** Containers `worker` dedicados consomem eventos atomicamente via `BLMOVE` (`queue:webhooks:pending` -> `queue:webhooks:processing`), aplicando ACK apos conclusao ou re-enfileiramento ate `MAX_JOB_ATTEMPTS = 3`. Falhas definitivas sao encaminhadas para Dead-Letter Queue (`queue:webhooks:dlq`).
+- **Distributed Lock por Cliente:** Para evitar condicoes de corrida quando um cliente envia varias mensagens em rajada, o sistema adquire trava atomica no Redis sob `lock:company:{company_id}:user:{phone_number}` (lease de 10s, liberacao validada por token UUID).
+- **Segregacao Multi-Tenant:** `company_id` (UUID v4), resolvido a partir de `instance_name`, atua como chave de particao logica obrigatoria em todas as consultas (`customer_sessions`, `order_records`, `message_history`, `knowledge_chunks`, `audit_logs`).
 
-### Camada 3: Motor Vetorial e RAG (Retrieval-Augmented Generation)
-- **Extensao pgvector:** A tabela `knowledge_chunks` persiste fragmentos textuais indexados por vetor denso de 768 dimensoes.
-- **Filtro Estrito por Tenant:** As consultas de similaridade utilizam a distancia de cosseno (`<=>`) filtradas impreterivelmente por `WHERE company_id = :company_id`. Dados de catalogo, precos ou regras de entrega de uma empresa jamais sao acessados por consultas de outros tenants.
+### Camada 3: Seguranca de IA (NVIDIA NeMo-Guardrails)
+- **Defesa em Profundidade (`app/guardrails_service.py`):** Combina definicoes em Colang 1.0 (`app/guardrails/rails.co`) e configuracoes declarativas (`app/guardrails/config.yml`).
+- **Input Rails (<20ms):** Bloqueia tentativas de Jailbreak (*DAN mode*), Prompt Injection (*ignore all previous instructions*), injecoes SQL (`DROP TABLE`, `UNION SELECT`) e Engenharia Social na borda antes de consumir tokens do LLM.
+- **Output Rails:** Sanitiza respostas do modelo antes do envio, bloqueando qualquer vazamento de chaves de API (`AQ.*`, `AIza*`, `sk-*`) ou strings de conexao (`postgresql://`, `redis://`).
+- **Telemetria de Ameacas:** Bloqueios geram eventos `SECURITY_INPUT_RAIL_BLOCKED` na trilha `audit_logs`.
 
 ### Camada 4: Maquina de Estados Conversacional (LangGraph)
-- O fluxo de atendimento e orquestrado por um grafo de estados (`StateGraph`) implementando a interface `BotState`.
-- **Roteamento Condicional por Segmento:**
-  - *Pizzarias e Lanchonetes:* Direcionamento imediato para raciocinio cognitivo com catalogo e saudacao estruturada em cinco categorias com faixas de preco (Pizzas Tradicionais, Especiais, Doces, Smash Burgers e Bebidas Geladas), sem obrigar navegacao robotica.
-  - *Distribuidoras de Bebidas/Gas:* Maquina de estados deterministica com estagios de coleta de itens, endereco, confirmacao e emissao de comanda de expedicao.
-  - *Depositos de Materiais e Farmacias:* Triagem de orcamento via busca vetorial no catalogo e transbordo humano prioritario (`human_handoff = True`).
+- Orquestrada por `StateGraph` implementando `BotState`, com roteamento condicional por segmento:
+  - *Pizzarias e Lanchonetes:* Atendimento fluido sem menus roboticos, com saudacao estruturada em cinco categorias (Pizzas Tradicionais, Especiais, Doces, Smash Burgers e Bebidas Geladas).
+  - *Distribuidoras de Bebidas/Gas:* Fluxo deterministico de coleta de itens, endereco, pagamento e comanda de expedicao.
+  - *Depositos de Materiais e Farmacias:* Triagem com busca vetorial RAG no catalogo e transbordo humano prioritario (`human_handoff = True`).
 
-### Camada 5: Memoria Conversacional Deslizante (Sliding Window)
-- Toda mensagem recebida de clientes (`role = "user"`) e respostas emitidas pelo motor (`role = "assistant"`) sao persistidas na tabela `message_history`.
-- O recuperador `get_chat_history` implementa uma janela deslizante retornando as ultimas N mensagens (padrao: 6 turnos) ordenadas cronologicamente, convertendo-as para `HumanMessage` e `AIMessage` do ecossistema LangChain.
+### Camada 5: Memoria Deslizante e RAG Vetorial em Escala (`pgvector` HNSW)
+- **Memoria Deslizante:** `get_chat_history` retorna os ultimos 6 turnos ordenados cronologicamente com timestamps monotonicamente crescentes (`app/rag.py`).
+- **Embeddings Semânticos (`app/embeddings.py`):** Gera vetores densos de 768 dimensoes usando `models/gemini-embedding-001` com cache em Redis (TTL 24h) e fallback deterministico offline para testes.
+- **Indice HNSW Nativo (`app/models.py` / `app/database.py`):** A coluna `knowledge_chunks.embedding` utiliza tipo `VECTOR(768)` no PostgreSQL indexado via `HNSW (vector_cosine_ops)` executando operador de distancia de cosseno (`<=>`) diretamente no SQL, mantendo variante `JSON` para compatibilidade com SQLite nos testes offline.
 
-### Camada 6: Raciocinio Cognitivo e Visao Multimodal
-- **Inferencia com Gemini 2.5 Flash:** O nó cognitivo instancia `ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_version="v1beta")`, permitindo API Keys proprias por empresa armazenadas em `Company.settings["gemini_api_key"]`.
-- **Auditoria Multimodal de Comprovantes Pix (Gemini Vision):**
-  - Quando o cliente envia imagem ou documento no WhatsApp, o sistema captura a midia via Evolution API e executa extracao visual estruturada.
-  - O modelo identifica o nome do pagador bancario, valor, data/hora e codigo de transacao.
-  - O sistema concilia o titular bancario mesmo quando for distinto do cliente solicitante (exemplo: pedido feito por *Eduardo Souza*, porem pago via conta de *Maria Souza*).
-  - A confirmacao do pagamento e enviada ao cliente e a comanda da cozinha e despachada segregando o nome do cliente e o nome do titular do Pix no extrato.
+### Camada 6: Raciocinio Cognitivo, Visao Multimodal e Despacho Resiliente
+- **Gemini 2.5 Flash & Vision:** Extrai dados de comprovantes Pix enviados em imagem/documento (pagador bancario, valor, data/hora e ID de autenticacao), conciliando pagamentos feitos por terceiros e enviando comanda segregada para o WhatsApp da cozinha (`whatsapp_cozinha`).
+- **Evolution Client com Retry (`app/evolution_client.py`):** Envios via Evolution API aplicam backoff exponencial (`1s, 2s, 4s`) contra erros transitórios 5xx/429/rede, registrando `WHATSAPP_SEND_FAILED` na auditoria em falha definitiva.
 
-### Camada 7: Seguranca de Nivel Corporativo (NVIDIA NeMo-Guardrails)
-- **Defesa em Profundidade (Defense in Depth):** Implementacao de rails de protecao baseados no framework oficial NVIDIA NeMo-Guardrails, combinando definicoes em Colang (`rails.co`) e politicas de seguranca declarativas (`config.yml`).
-- **Input Rails (Inspecao Ativa de Entrada):**
-  - Bloqueio imediato de ataques de Jailbreak (ex: *DAN mode*, *Do Anything Now*, desativacao de restricoes morais).
-  - Bloqueio de Prompt Injection (ex: *Ignore all previous instructions*, comandos de substituicao de contexto, injecoes SQL).
-  - Bloqueio de Engenharia Social (ex: usuarios fingindo ser gestores, donos ou autoridades exigindo descontos ou dados).
-  - Tempo de resposta ultra-rapido (latencia inferior a 20ms na borda), abatendo o ataque antes de consumir tokens do LLM ou atingir o banco de dados.
-- **Output Rails (Prevencao de Vazamento de Segredos e PII):**
-  - Inspecao automatica de respostas contra padroes de chaves de API (`AQ.*`, `AIza*`, `sk-*`), strings de conexao com senhas de banco (`postgresql://`, `redis://`) e credenciais do servidor.
-- **Trilha de Auditoria de Seguranca:**
-  - Eventos de ataque sao sumariamente registrados em `audit_logs` sob o tipo `SECURITY_INPUT_RAIL_BLOCKED` para telemetria de ameacas em tempo real.
+### Camada 7: Observabilidade, Monitoramento de Queda e Migracoes
+- **Monitoramento Ativo `CONNECTION_UPDATE` (`app/connection_monitor.py`):** Detecta desconexoes (`close`, `refused`, `disconnected`), grava alerta critico (`WHATSAPP_DISCONNECTED_ALERT`), persiste `disconnected_at`, calcula duracao da queda e dispara push notification para `ALERT_WEBHOOK_URL` com cooldown de 30 minutos no Redis.
+- **Migracoes Versionadas (`alembic/`):** Evolucao controlada do schema PostgreSQL e criacao automatica de extensoes e indices HNSW via `alembic upgrade head`.
 
-### Camada 8: Observabilidade, Auditoria Estruturada e Telemetria
-- Emissao de logs estruturados em JSON contendo timestamp UTC em formato ISO8601, tenant ID, identificador do cliente, tempo de execucao em milissegundos e payload detalhado de entrada e saida.
-- Persistencia relacional em `audit_logs` para conformidade e rastreabilidade historica.
-- Endpoint administrativo dedicado `GET /audit/logs/{company_id_or_instance}` para consumo de trilhas de auditoria.
-
-### Camada 8: Test Harness Deterministico (Offline, Custo R$ 0,00)
-- Suite de testes automatizada via Pytest com execucao 100% isolada e sem consumo de chamadas externas de rede ou cobranca de tokens.
-- O banco PostgreSQL e substituido em tempo de execucao por `sqlite+aiosqlite:///:memory:`.
-- O servidor Redis e substituido por `fakeredis.aioredis.FakeRedis`.
-- Modelos LLM sao substituidos por dubles de teste e mocks deterministas, validando 13 cenarios criticos de negocio em menos de 2 segundos.
+### Camada 8: Suite de Testes Automatizados (30 Testes Offline, Custo Zero)
+- Executada via `pytest` com `sqlite+aiosqlite:///:memory:`, `fakeredis.aioredis.FakeRedis` e mocks deterministicos cobrindo todo o ciclo funcional, seguranca NeMo-Guardrails, monitoramento de conexao e hardening V2.
 
 ---
 
@@ -134,89 +127,126 @@ O microsservico foi concebido sob os principios de Clean Architecture, Orientaca
 
 ```text
 .
-├── pyproject.toml              # Gerenciador de dependencias uv e configuracoes do pytest
-├── .env.example                # Especificacao das variaveis de ambiente obrigatorias
-├── .gitignore                  # Regras de exclusao de credenciais, caches e dados locais
-├── Dockerfile                  # Construcao multi-stage de imagem de producao
-├── docker-compose.yml          # Orquestracao dos servicos (API, Postgres, Redis, Evolution)
+├── pyproject.toml                       # Gerenciador de dependencias uv e configuracoes pytest
+├── uv.lock                              # Lockfile deterministico de dependencias
+├── alembic.ini                          # Configuracao do Alembic para migracoes assincronas
+├── alembic/
+│   ├── env.py                           # Ambiente assincrono lendo settings.async_postgres_url
+│   └── versions/
+│       └── 0001_initial_schema.py       # Migracao baseline (tabelas + pgvector + HNSW)
+├── Dockerfile                           # Imagem de producao com uvicorn --workers 2
+├── docker-compose.yml                   # Stack local (Postgres, Redis, Evolution, API, Worker)
+├── docker-compose.prod.yml              # Stack producao VPS (Caddy SSL + rede bridge isolada)
+├── docker-compose.ip-test.yml           # Stack de homologacao direta por IP da VPS
+├── Caddyfile                            # Proxy reverso com HTTPS automatico Let's Encrypt
+├── .env.example                         # Variaveis basicas de desenvolvimento local
+├── .env.prod.example                    # Template completo de variaveis de producao V2
 ├── app/
-│   ├── __init__.py
-│   ├── config.py               # Validacao tipada de configuracoes via Pydantic Settings
-│   ├── database.py             # Conexoes assincronas, locks distribuidos e deduplicacao
-│   ├── models.py               # Modelos relacionais e vetoriais SQLAlchemy 2.0
-│   ├── schemas.py              # Contratos Pydantic e payloads da Evolution API v2
-│   ├── logging_config.py       # Sistema de logs estruturados e auditoria em JSON
-│   ├── rag.py                  # Servico de busca vetorial, sliding window e prompt injection
-│   ├── vision.py               # Extracao multimodal de comprovantes bancarios via Gemini Vision
-│   ├── graph.py                # Maquina de estados e nos cognitivos via LangGraph
-│   ├── init_db.py              # Script idempotente de criacao de tabelas e sementes (seed)
-│   └── main.py                 # Aplicacao FastAPI, endpoints de webhook e auditoria
+│   ├── config.py                        # Configuracoes tipadas via Pydantic Settings
+│   ├── security.py                      # Autenticacao de borda (WEBHOOK_SECRET e ADMIN_API_KEY)
+│   ├── database.py                      # Engine async, EventDeduplicator, DistributedLock e busca SQL pgvector
+│   ├── models.py                        # Modelos SQLAlchemy 2.0 + Vector(768) com HNSW
+│   ├── schemas.py                       # Contratos Pydantic e parsers Evolution API v2
+│   ├── embeddings.py                    # Geracao semantica gemini-embedding-001 + cache Redis + fallback
+│   ├── evolution_client.py              # Cliente HTTP Evolution API v2 com backoff exponencial
+│   ├── connection_monitor.py            # Monitoramento CONNECTION_UPDATE e push alerts com cooldown
+│   ├── guardrails/
+│   │   ├── config.yml                   # Configuracao declarativa NVIDIA NeMo-Guardrails
+│   │   └── rails.co                     # Fluxos Colang 1.0 (Jailbreak, Prompt Injection, SQLi, Social Eng.)
+│   ├── guardrails_service.py            # Motor de defesa em profundidade Input/Output Rails
+│   ├── rag.py                           # Memoria deslizante (monotonic UTC), catalogo e system prompt
+│   ├── vision.py                        # Auditoria multimodal de comprovantes Pix (Gemini Vision)
+│   ├── graph.py                         # Maquina de estados e nos cognitivos LangGraph
+│   ├── webhook_processor.py             # Pipeline unificado de processamento de mensagens
+│   ├── queue_worker.py                  # Producer Redis (LPUSH) e Worker dedicado (BLMOVE + ACK/DLQ)
+│   ├── logging_config.py                # Logs estruturados em JSON ISO8601
+│   ├── init_db.py                       # Script legado de inicializacao direta
+│   ├── seed_lanchonete.py               # Seed idempotente do primeiro tenant e catalogo RAG
+│   └── main.py                          # Aplicacao FastAPI, rotas de webhook, auditoria e saude
 ├── scripts/
-│   └── setup_evolution.py      # Automacao de criacao de instancias e pareamento via QR Code
+│   ├── deploy_vps.sh                    # Bootstrap e hardening Linux VPS (UFW, Fail2ban, Swap 4GB, Docker)
+│   ├── start_prod.sh                    # Subida da stack prod + alembic upgrade head + seed
+│   ├── start_test_ip.sh                 # Subida em modo teste por IP + alembic + seed
+│   ├── backup_prod.sh                   # Backup diario PostgreSQL + sessoes Evolution (/evolution/instances)
+│   ├── setup_evolution.py               # Provisionamento automatico de instancia, webhook e QR Code
+│   └── generate_pdf_report.py           # Gerador do relatorio PDF de testes e evidencias
 └── tests/
-    ├── __init__.py
-    └── test_harness.py         # Suite completa de testes deterministicos offline
+    ├── conftest.py                      # Configuracao offline deterministica da suite pytest
+    ├── test_harness.py                  # 13 testes de fluxo multi-tenant, RAG, memoria e visao Pix
+    ├── test_guardrails_security.py      # 7 testes de seguranca Red Teaming NVIDIA NeMo-Guardrails
+    ├── test_connection_monitoring.py    # 4 testes de monitoramento CONNECTION_UPDATE e volumes
+    └── test_production_hardening.py     # 6 testes de hardening V2 (Auth, Fila/DLQ, Retry, Push, HNSW)
 ```
 
 ---
 
 ## 4. Variaveis de Ambiente
 
-Crie o arquivo `.env` na raiz do projeto com base no arquivo `.env.example`:
+Para ambiente local utilize `.env` baseado em `.env.example`, e para producao utilize `.env.prod.example`:
 
-```bash
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=whatsapp_engine
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-REDIS_URL=redis://localhost:6379/0
-EVOLUTION_API_URL=http://localhost:8080
-EVOLUTION_API_KEY=secret-token
-GEMINI_API_KEY=sua_chave_gemini_aqui
-```
+| Variavel | Descricao | Exemplo |
+| :--- | :--- | :--- |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Credenciais do banco PostgreSQL 16 + pgvector | `whatsapp_engine_prod` |
+| `REDIS_URL` | URI interna do Redis (deduplicacao, locks, filas, cache) | `redis://redis:6379/0` |
+| `EVOLUTION_API_URL` / `EVOLUTION_API_KEY` | URL e chave global da Evolution API v2 | `http://evolution-api:8080` |
+| `GEMINI_API_KEY` | Chave Google AI Studio (Gemini 2.5 Flash e Embeddings) | `sua_chave_gemini` |
+| `WEBHOOK_SECRET` | Segredo validado no header `X-Webhook-Secret` do webhook | `token_seguro_32_chars` |
+| `ADMIN_API_KEY` | Chave Bearer / `X-Admin-Key` das rotas administrativas | `admin_key_32_chars` |
+| `ASYNC_QUEUE_ENABLED` | Ativa ingestao via fila Redis + Worker dedicado | `true` |
+| `ALERT_WEBHOOK_URL` | Webhook externo (Slack/Discord/n8n) para alertas de queda | `https://hooks.exemplo/alert` |
+| `DOMAIN_API` / `DOMAIN_EVOLUTION` | Subdominios roteados pelo Caddy com SSL automatico | `api.seudominio.com` |
 
 ---
 
-## 5. Instrucoes de Execucao e Implantação
+## 5. Instrucoes de Execucao e Implantacao
 
-### 5.1. Inicializacao dos Servicos com Docker Compose
+### 5.1. Ambiente Local (Desenvolvimento)
 
-Suba a infraestrutura completa contendo o banco de dados PostgreSQL com pgvector, Redis, Evolution API v2 e a aplicacao FastAPI:
+Suba a stack completa (PostgreSQL pgvector, Redis, Evolution API v2, API FastAPI e Worker):
 
 ```bash
 docker compose up -d --build
-```
-
-Verifique a saude dos containers:
-
-```bash
 docker compose ps
 ```
 
-### 5.2. Populacao do Banco de Dados e Catalogo (Seed)
-
-Execute o script de inicializacao idempotente para criar as extensoes, schemas, tabelas e carregar o catalogo de conhecimento RAG:
+Aplique as migracoes Alembic e execute o seed inicial do tenant:
 
 ```bash
-docker exec ia_wpp_api python -m app.init_db
+docker compose exec api alembic upgrade head
+docker compose exec api python -m app.seed_lanchonete
+```
+
+### 5.2. Implantacao em Producao (VPS Linux Ubuntu 22.04 / 24.04)
+
+Na VPS limpa como `root`:
+
+```bash
+bash scripts/deploy_vps.sh
+cd /opt/whatsapp-engine
+cp .env.prod.example .env
+nano .env
+bash scripts/start_prod.sh
+```
+
+Para homologacao rapida via IP sem dominio/SSL:
+
+```bash
+bash scripts/start_test_ip.sh
 ```
 
 ### 5.3. Pareamento do WhatsApp (QR Code)
 
-Para conectar o numero de WhatsApp a instancia do gateway Evolution API, execute o script de automacao:
+Para criar a instancia, habilitar os eventos `MESSAGES_UPSERT` e `CONNECTION_UPDATE` (incluindo `X-Webhook-Secret` se configurado) e gerar o QR Code:
 
 ```bash
 uv run python scripts/setup_evolution.py
 ```
 
-O script criara a instancia caso necessario, configurara os webhooks para apontar para `http://api:8000/webhook/evolution`, renderizara o QR Code em blocos ASCII no terminal e salvara a imagem fisica em `qrcode.png`.
-
 ---
 
 ## 6. Execucao da Suite de Testes
 
-Para executar todos os 30 testes automatizados (isolamento multi-tenant, concorrencia Redis, seguranca NeMo-Guardrails, monitoramento de queda, fila assincrona/DLQ, retry HTTP e autenticacao):
+Para executar todos os 30 testes automatizados (isolamento multi-tenant, concorrencia Redis, seguranca NeMo-Guardrails, monitoramento de queda, fila assincrona/DLQ, backoff exponencial e autenticacao):
 
 ```bash
 uv run pytest -v
@@ -232,14 +262,14 @@ Suites incluidas:
 
 ## 7. Especificacao dos Endpoints
 
-| Metodo | Rota | Descricao |
-| :--- | :--- | :--- |
-| `GET` | `/health` | Verificacao de disponibilidade e integridade do servico. |
-| `POST` | `/webhook/evolution` | Endpoint receptor de eventos da Evolution API v2 (mensagens e status de conexao CONNECTION_UPDATE). |
-| `GET` | `/api/instances/health` | Monitoramento global de saude e disponibilidade das instancias WhatsApp. |
-| `GET` | `/api/companies/{id}/connection-status` | Status em tempo real, duracao de queda e alertas de reconexao por empresa. |
-| `GET` | `/audit/logs/{company_id}` | Consulta da trilha de auditoria e telemetria filtrada estritamente por tenant. |
-| `GET` | `/docs` | Documentacao interativa OpenAPI / Swagger UI. |
+| Metodo | Rota | Autenticacao | Descricao |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/health` | Publica | Verificacao de disponibilidade e integridade do servico. |
+| `POST` | `/webhook/evolution` | `X-Webhook-Secret` | Receptor de eventos Evolution API v2 (mensagens e `CONNECTION_UPDATE`). |
+| `GET` | `/api/instances/health` | `ADMIN_API_KEY` | Monitoramento global de saude e disponibilidade das instancias WhatsApp. |
+| `GET` | `/api/companies/{id}/connection-status` | `ADMIN_API_KEY` | Status em tempo real, duracao de queda e alertas de reconexao por empresa. |
+| `GET` | `/audit/logs/{company_id}` | `ADMIN_API_KEY` | Consulta da trilha de auditoria e telemetria filtrada estritamente por tenant. |
+| `GET` | `/docs` | Publica | Documentacao interativa OpenAPI / Swagger UI. |
 
 ---
 
@@ -247,32 +277,12 @@ Suites incluidas:
 
 Para garantir resiliencia operacional e eliminar perda de atendimento por reinicializacoes ou falhas fisicas no aparelho do lojista, o sistema adota tres diretrizes mandatorias de producao:
 
-### 8.1. Reinicializacao Automatica (restart: always)
-Todos os servicos no `docker-compose.yml`, `docker-compose.prod.yml` e `docker-compose.ip-test.yml` possuem a diretiva `restart: always`. Em cenarios de oscilacao de memoria, parada nao planejada ou reinicializacao do host Linux (VPS), o daemon do Docker restabelece o gateway Evolution API, PostgreSQL e FastAPI em segundos.
-
-### 8.2. Persistencia Estrita de Sessao e Tokens WhatsApp
-Para que atualizacoes de containers ou reboots da VPS nao exijam nova leitura de QR Code pelo lojista, os diretorios criticos da sessao Baileys sao mapeados em volumes nomeados persistentes:
-- `/evolution/instances`: Armazena chaves de criptografia e credenciais multi-file-auth-state.
-- `/evolution/store`: Armazena cache de contatos e metadados de chats.
-- Rotina automatica de backup diario em `scripts/backup_prod.sh` exportando os dados de sessao em arquivos comprimidos com retencao de 7 dias.
-
-### 8.3. Monitoramento Ativo de Queda (CONNECTION_UPDATE)
-O gateway Evolution API despacha eventos de conectividade (`CONNECTION_UPDATE`) para o backend:
-- **Deteccao de Queda:** Estados como `close`, `refused` ou `disconnected` acionam o servico `ConnectionMonitorService`, gravando eventos `WHATSAPP_DISCONNECTED_ALERT` no banco, persistindo alerta critico no Redis e disparando push notification ativa para `ALERT_WEBHOOK_URL` com controle de cooldown de 30 minutos.
-- **Restabelecimento:** O estado `open` limpa flags de alerta e registra o retorno da operacao.
-- **Supervisao Centralizada:** Operadores podem consultar a saude de todas as conexoes via `GET /api/instances/health` protegido por `ADMIN_API_KEY`.
+1. **Reinicializacao Automatica (`restart: always`):** Todos os servicos (`evolution`, `postgres`, `redis`, `api`, `worker`, `caddy`) nos arquivos compose utilizam `restart: always`, garantindo recuperacao automatica em segundos apos qualquer oscilacao de memoria ou reboot da VPS.
+2. **Persistencia Estrita de Sessao e Backups:** Os diretorios `/evolution/instances` e `/evolution/store` sao persistidos em volumes nomeados do Docker, evitando releitura de QR Code apos updates de container. O script `scripts/backup_prod.sh` realiza backup diario automatizado do PostgreSQL e dos arquivos de sessao com retencao de 7 dias.
+3. **Monitoramento Ativo de Queda (`CONNECTION_UPDATE`):** Eventos de desconexao (`close`, `refused`, `disconnected`) acionam o `ConnectionMonitorService`, gravando alerta critico na auditoria, calculando tempo exato de inatividade e disparando push notification com cooldown de 30 minutos.
 
 ---
 
-## 9. Hardening V2 para Operacao Comercial em Escala (20+ Empresas)
+## 9. Licenca e Autoria
 
-- **Seguranca de Borda (`app/security.py`):** Validacao criptografica com `hmac.compare_digest` via `WEBHOOK_SECRET` na entrada `POST /webhook/evolution` e `ADMIN_API_KEY` (`X-Admin-Key` / `Authorization: Bearer`) nas rotas administrativas.
-- **Desacoplamento por Fila Assincrona e DLQ (`app/queue_worker.py`):** Quando `ASYNC_QUEUE_ENABLED=true`, a API apenas autentica, deduplica e publica na fila confiavel Redis (`LPUSH` -> `BLMOVE` -> ACK) respondendo `200 OK` em menos de 20ms, enquanto containers `worker` dedicados processam o LangGraph e enviam mensagens com retry e backoff exponencial (`1s, 2s, 4s`), movendo falhas permanentes para `queue:webhooks:dlq`.
-- **Busca Vetorial Nativa em Escala (`pgvector` HNSW + `gemini-embedding-001`):** A tabela `knowledge_chunks` armazena vetores `VECTOR(768)` indexados via `HNSW (vector_cosine_ops)` executando operador `<=>` diretamente no PostgreSQL, com cache de embeddings no Redis e fallback deterministico offline.
-- **Migracoes Versionadas (`alembic/`):** Evolucao controlada de schema em producao via `alembic upgrade head`.
-
----
-
-## 10. Licenca e Autoria
-
-Projeto concebido para operacoes de alta demanda, arquitetado sob rigorosos padroes de engenharia de software para microsservicos corporativos assincronos.
+Projeto concebido para operacoes comerciais multi-tenant de alta demanda, arquitetado sob rigorosos padroes de engenharia de software para microsservicos corporativos assincronos.
