@@ -1,7 +1,8 @@
 import asyncio
 import uuid
 from sqlalchemy import text, select
-from app.database import engine, AsyncSessionLocal, generate_mock_embedding
+from app.database import engine, AsyncSessionLocal
+from app.embeddings import generate_semantic_embedding
 from app.models import Base, Company, KnowledgeChunk
 
 
@@ -169,7 +170,7 @@ async def init_database():
                 company_id=pizzaria.id,
                 content=item["content"],
                 metadata_info=item["meta"],
-                embedding=generate_mock_embedding(item["content"]),
+                embedding=await generate_semantic_embedding(item["content"]),
             )
             chunks_to_add.append(chunk)
 

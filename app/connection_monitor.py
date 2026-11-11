@@ -2,10 +2,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+import httpx
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings as app_settings
 from app.logging_config import log_audit_event
 from app.models import AuditLog, Company
 from app.schemas import EvolutionMessagePayload
@@ -124,6 +126,15 @@ class ConnectionMonitorService:
                 }
             )
 
+            await self.dispatch_push_alert(
+                company=company,
+                instance_name=instance_name,
+                state=state,
+                reason=reason,
+                alert_message=alert_message,
+                redis=redis,
+            )
+
         elif state == self.STATE_OPEN:
             settings.pop("disconnected_at", None)
             settings["last_connected_at"] = now_iso
@@ -153,6 +164,7 @@ class ConnectionMonitorService:
                 await redis.set(f"evolution:status:{instance_name}", self.STATE_OPEN)
                 await redis.delete(f"evolution:alert:{instance_name}")
                 await redis.delete(f"evolution:disconnected_at:{instance_name}")
+                await redis.delete(f"evolution:alert_cooldown:{instance_name}")
 
             log_audit_event(
                 event_type="WHATSAPP_CONNECTION_UP",
@@ -206,5 +218,53 @@ class ConnectionMonitorService:
             "alert_required": not is_connected and status in self.OFFLINE_STATES,
         }
 
+    async def dispatch_push_alert(
+        self,
+        company: Company,
+        instance_name: str,
+        state: str,
+        reason: Optional[Any],
+        alert_message: str,
+        redis=None,
+        cooldown_seconds: int = 1800,
+    ) -> bool:
+        """
+        Dispara notificação HTTP ativa (Slack/Discord/n8n/Webhook) quando uma instância cai.
+        Aplica cooldown atômico no Redis (padrão 30 minutos) para evitar spam durante oscilações.
+        """
+        alert_url = (app_settings.ALERT_WEBHOOK_URL or "").strip()
+        if not alert_url:
+            return False
+
+        if redis:
+            cooldown_key = f"evolution:alert_cooldown:{instance_name}"
+            acquired = await redis.set(cooldown_key, "1", nx=True, ex=cooldown_seconds)
+            if not acquired:
+                logger.info(
+                    f"[ALERT_COOLDOWN] Alerta ativo já enviado recentemente para '{instance_name}'."
+                )
+                return False
+
+        payload = {
+            "event": "WHATSAPP_DISCONNECTED_ALERT",
+            "severity": "CRITICAL",
+            "company_id": company.id,
+            "company_name": company.name,
+            "instance_name": instance_name,
+            "state": state,
+            "reason": reason,
+            "text": alert_message,
+            "content": alert_message,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(alert_url, json=payload)
+                return 200 <= resp.status_code < 300
+        except Exception as exc:
+            logger.error(f"[ALERT_DISPATCH_FAILED] Falha ao enviar webhook de alerta para {alert_url}: {exc}")
+            return False
+
 
 connection_monitor = ConnectionMonitorService()
+

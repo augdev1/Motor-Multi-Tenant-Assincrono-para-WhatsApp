@@ -353,6 +353,12 @@ def generate_pdf():
         [Paragraph("test_connection_update_open_restores_health", styles["Normal"]), Paragraph("Alta Disp.: Recuperação e Restauração de Conexão", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
         [Paragraph("test_api_connection_status_and_health_endpoints", styles["Normal"]), Paragraph("Supervisão: Endpoints de Saúde e Status em Tempo Real", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
         [Paragraph("test_docker_compose_files_have_restart_always", styles["Normal"]), Paragraph("Resiliência: Validação de restart: always e Volumes", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_webhook_and_admin_authentication_enforcement", styles["Normal"]), Paragraph("Segurança V2: Autenticação Webhook e Rotas Admin", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_async_queue_ingestion_and_worker_execution", styles["Normal"]), Paragraph("Escala V2: Fila Assíncrona Redis + Worker Dedicado", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_worker_dlq_after_max_retries", styles["Normal"]), Paragraph("Resiliência V2: Re-enfileiramento e Dead-Letter Queue", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_evolution_client_exponential_backoff_retry", styles["Normal"]), Paragraph("Tolerância a Falhas: Backoff Exponencial no Envio", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_active_push_alert_and_redis_cooldown", styles["Normal"]), Paragraph("Observabilidade V2: Push Alert e Cooldown Redis", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_pgvector_native_sql_compilation_and_embedding_fallback", styles["Normal"]), Paragraph("RAG V2: Compilação SQL pgvector (<=>) e Embedding", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
     ]
     test_table = Table(test_results_data, colWidths=[200, 240, 90])
     test_table.setStyle(TableStyle([

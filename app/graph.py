@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.database import generate_mock_embedding, search_knowledge_chunks
+from app.database import search_knowledge_chunks
+from app.embeddings import generate_semantic_embedding
 from app.guardrails_service import security_guardrails
 from app.models import Company, CustomerSession, MessageHistory, OrderRecord, utc_now
 from app.rag import (
@@ -433,7 +434,7 @@ async def balcao_triagem(state: BotState, config: RunnableConfig) -> Dict[str, A
         }
 
     # Busca RAG no catálogo da empresa
-    query_vector = generate_mock_embedding(text)
+    query_vector = await generate_semantic_embedding(text)
     matched_chunks = await search_knowledge_chunks(
         db=db,
         company_id=state.company_id,

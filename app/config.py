@@ -26,6 +26,15 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = "mock-key"
 
+    # Segurança de borda e autenticação
+    WEBHOOK_SECRET: str = ""
+    ADMIN_API_KEY: str = ""
+
+    # Escala assíncrona e alertas ativos
+    ASYNC_QUEUE_ENABLED: bool = False
+    ALERT_WEBHOOK_URL: Optional[str] = None
+    USE_REAL_EMBEDDINGS: bool = True
+
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
 

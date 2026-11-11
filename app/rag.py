@@ -1,10 +1,24 @@
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import generate_mock_embedding, search_knowledge_chunks
+from app.database import search_knowledge_chunks
+from app.embeddings import generate_semantic_embedding
 from app.models import Company, MessageHistory
+
+_last_saved_ts: Optional[datetime] = None
+
+
+def _next_monotonic_utc() -> datetime:
+    """Garante timestamps estritamente crescentes mesmo em gravações sub-milissegundo."""
+    global _last_saved_ts
+    now = datetime.now(timezone.utc)
+    if _last_saved_ts is not None and now <= _last_saved_ts:
+        now = _last_saved_ts + timedelta(microseconds=10)
+    _last_saved_ts = now
+    return now
 
 
 async def get_chat_history(
@@ -58,7 +72,8 @@ async def save_message(
         company_id=company_id,
         customer_phone=phone,
         role=role,
-        content=content
+        content=content,
+        created_at=_next_monotonic_utc(),
     )
     session.add(msg)
     await session.flush()
@@ -210,7 +225,8 @@ async def search_knowledge_base(
     company_id: str,
     query: str,
     top_k: int = 3,
-    min_similarity: float = 0.10
+    min_similarity: float = 0.10,
+    redis_client=None,
 ) -> str:
     """
     Executa busca vetorial no catálogo do tenant e retorna o contexto formatado em texto.
@@ -218,7 +234,7 @@ async def search_knowledge_base(
     if not query:
         return ""
 
-    query_embedding = generate_mock_embedding(query)
+    query_embedding = await generate_semantic_embedding(query, redis_client=redis_client)
     matches = await search_knowledge_chunks(
         db=session,
         company_id=company_id,

@@ -216,31 +216,17 @@ O script criara a instancia caso necessario, configurara os webhooks para aponta
 
 ## 6. Execucao da Suite de Testes
 
-Para executar os 13 testes deterministicos offline com relatorio detalhado:
+Para executar todos os 30 testes automatizados (isolamento multi-tenant, concorrencia Redis, seguranca NeMo-Guardrails, monitoramento de queda, fila assincrona/DLQ, retry HTTP e autenticacao):
 
 ```bash
 uv run pytest -v
 ```
 
-Exemplo de saida:
-
-```text
-tests/test_harness.py::test_tenant_resolution_and_isolation PASSED       [  7%]
-tests/test_harness.py::test_delivery_order_full_lifecycle PASSED         [ 15%]
-tests/test_harness.py::test_human_handoff_trigger PASSED                 [ 23%]
-tests/test_harness.py::test_redis_deduplication PASSED                   [ 30%]
-tests/test_harness.py::test_lock_contention PASSED                       [ 38%]
-tests/test_harness.py::test_material_construcao_rag_response PASSED      [ 46%]
-tests/test_harness.py::test_outbound_and_group_filtering PASSED          [ 53%]
-tests/test_harness.py::test_pharmacy_rag_search PASSED                   [ 61%]
-tests/test_harness.py::test_sliding_window_memory PASSED                 [ 69%]
-tests/test_harness.py::test_receipt_vision_audit PASSED                  [ 76%]
-tests/test_harness.py::test_memory_tenant_isolation PASSED               [ 84%]
-tests/test_harness.py::test_dynamic_context_injection PASSED             [ 92%]
-tests/test_harness.py::test_ai_reasoning_node_mocked PASSED              [100%]
-
-============================= 13 passed in 1.67s ==============================
-```
+Suites incluidas:
+- `tests/test_harness.py` (13 testes): Isolamento de tenants, ciclo completo de pedidos, RAG, memoria deslizante, visao de comprovantes Pix e transbordo humano.
+- `tests/test_guardrails_security.py` (7 testes): Protecao ativa NVIDIA NeMo-Guardrails contra Jailbreak DAN, Prompt Injection, extracao de chaves e falsos positivos.
+- `tests/test_connection_monitoring.py` (4 testes): Alertas `CONNECTION_UPDATE`, restauracao, endpoints de saude e resiliencia Docker.
+- `tests/test_production_hardening.py` (6 testes): Autenticacao de borda (`WEBHOOK_SECRET`, `ADMIN_API_KEY`), fila assincrona Redis + Worker + DLQ, backoff exponencial, cooldown de push alerts e compilacao nativa `pgvector` HNSW.
 
 ---
 
@@ -272,12 +258,21 @@ Para que atualizacoes de containers ou reboots da VPS nao exijam nova leitura de
 
 ### 8.3. Monitoramento Ativo de Queda (CONNECTION_UPDATE)
 O gateway Evolution API despacha eventos de conectividade (`CONNECTION_UPDATE`) para o backend:
-- **Deteccao de Queda:** Estados como `close`, `refused` ou `disconnected` acionam o servico `ConnectionMonitorService`, gravando eventos `WHATSAPP_DISCONNECTED_ALERT` no banco, persistindo alerta critico no Redis e calculando a duracao exata de inatividade.
+- **Deteccao de Queda:** Estados como `close`, `refused` ou `disconnected` acionam o servico `ConnectionMonitorService`, gravando eventos `WHATSAPP_DISCONNECTED_ALERT` no banco, persistindo alerta critico no Redis e disparando push notification ativa para `ALERT_WEBHOOK_URL` com controle de cooldown de 30 minutos.
 - **Restabelecimento:** O estado `open` limpa flags de alerta e registra o retorno da operacao.
-- **Supervisao Centralizada:** Operadores podem consultar a saude de todas as conexoes via `GET /api/instances/health`.
+- **Supervisao Centralizada:** Operadores podem consultar a saude de todas as conexoes via `GET /api/instances/health` protegido por `ADMIN_API_KEY`.
 
 ---
 
-## 9. Licenca e Autoria
+## 9. Hardening V2 para Operacao Comercial em Escala (20+ Empresas)
+
+- **Seguranca de Borda (`app/security.py`):** Validacao criptografica com `hmac.compare_digest` via `WEBHOOK_SECRET` na entrada `POST /webhook/evolution` e `ADMIN_API_KEY` (`X-Admin-Key` / `Authorization: Bearer`) nas rotas administrativas.
+- **Desacoplamento por Fila Assincrona e DLQ (`app/queue_worker.py`):** Quando `ASYNC_QUEUE_ENABLED=true`, a API apenas autentica, deduplica e publica na fila confiavel Redis (`LPUSH` -> `BLMOVE` -> ACK) respondendo `200 OK` em menos de 20ms, enquanto containers `worker` dedicados processam o LangGraph e enviam mensagens com retry e backoff exponencial (`1s, 2s, 4s`), movendo falhas permanentes para `queue:webhooks:dlq`.
+- **Busca Vetorial Nativa em Escala (`pgvector` HNSW + `gemini-embedding-001`):** A tabela `knowledge_chunks` armazena vetores `VECTOR(768)` indexados via `HNSW (vector_cosine_ops)` executando operador `<=>` diretamente no PostgreSQL, com cache de embeddings no Redis e fallback deterministico offline.
+- **Migracoes Versionadas (`alembic/`):** Evolucao controlada de schema em producao via `alembic upgrade head`.
+
+---
+
+## 10. Licenca e Autoria
 
 Projeto concebido para operacoes de alta demanda, arquitetado sob rigorosos padroes de engenharia de software para microsservicos corporativos assincronos.

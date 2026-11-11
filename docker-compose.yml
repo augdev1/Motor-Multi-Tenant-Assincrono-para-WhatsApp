@@ -88,6 +88,36 @@ services:
       - EVOLUTION_API_URL=http://evolution:8080
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-secret-token}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-mock-gemini-key}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      - ASYNC_QUEUE_ENABLED=${ASYNC_QUEUE_ENABLED:-true}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ia_wpp_worker
+    restart: always
+    command: ["python", "-m", "app.queue_worker"]
+    networks:
+      - bot-network
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-whatsapp_engine}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - EVOLUTION_API_URL=http://evolution:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-secret-token}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-mock-gemini-key}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

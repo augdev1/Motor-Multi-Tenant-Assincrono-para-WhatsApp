@@ -48,9 +48,9 @@ if [ "$ATTEMPT" -ge "$MAX_ATTEMPTS" ]; then
     exit 1
 fi
 
-# 4. Execução de migração e criação de tabelas
-echo ">>> [1/2] Executando inicialização do banco de dados (app.init_db)..."
-docker compose -f "${COMPOSE_FILE}" exec -T api python -m app.init_db
+# 4. Execução de migrações versionadas (Alembic + pgvector HNSW)
+echo ">>> [1/2] Executando migrações de banco de dados (alembic upgrade head)..."
+docker compose -f "${COMPOSE_FILE}" exec -T api alembic upgrade head
 
 # 5. Execução do seed do primeiro tenant (Sabor & Forno Pizzaria e Lanches)
 echo ">>> [2/2] Executando semente do primeiro tenant e catálogo RAG (app.seed_lanchonete)..."

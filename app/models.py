@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -64,10 +65,22 @@ class KnowledgeChunk(Base):
     company_id: Mapped[str] = mapped_column(String(36), ForeignKey("companies.id"), index=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_info: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
-    embedding: Mapped[List[float]] = mapped_column(JSON, nullable=False)
+    embedding: Mapped[List[float]] = mapped_column(
+        Vector(768).with_variant(JSON(), "sqlite"),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, server_default=func.now())
 
     company: Mapped["Company"] = relationship("Company", back_populates="chunks")
+
+    __table_args__ = (
+        Index(
+            "ix_knowledge_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
 
 
 class OrderRecord(Base):

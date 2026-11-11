@@ -145,8 +145,30 @@ async def search_knowledge_chunks(
 ) -> List[Tuple[KnowledgeChunk, float]]:
     """
     Busca semântica no catálogo estritamente filtrada por company_id (isolamento absoluto).
-    Garante que nenhum dado de outro tenant seja exposto.
+    Em PostgreSQL utiliza operador nativo pgvector (<=>) com índice HNSW no banco;
+    em SQLite (testes offline) executa cálculo de cosseno em memória.
     """
+    try:
+        dialect_name = db.get_bind().dialect.name
+    except Exception:
+        dialect_name = ""
+
+    if dialect_name == "postgresql":
+        distance_expr = KnowledgeChunk.embedding.cosine_distance(query_embedding)
+        similarity_expr = (1.0 - distance_expr).label("similarity")
+        stmt = (
+            select(KnowledgeChunk, similarity_expr)
+            .where(KnowledgeChunk.company_id == company_id)
+            .order_by(distance_expr.asc())
+            .limit(top_k)
+        )
+        result = await db.execute(stmt)
+        return [
+            (chunk, float(sim))
+            for chunk, sim in result.all()
+            if float(sim) >= min_similarity
+        ]
+
     stmt = select(KnowledgeChunk).where(KnowledgeChunk.company_id == company_id)
     result = await db.execute(stmt)
     chunks = result.scalars().all()

@@ -82,18 +82,21 @@ def create_instance(client: httpx.Client, base_url: str, api_key: str, instance_
 def configure_webhook(client: httpx.Client, base_url: str, api_key: str, instance_name: str, webhook_url: str) -> bool:
     """Configura o webhook da instância apontando para o backend FastAPI."""
     headers = {"apikey": api_key, "Content-Type": "application/json"}
-    payload = {
-        "webhook": {
-            "enabled": True,
-            "url": webhook_url,
-            "byEvents": False,
-            "base64": False,
-            "events": [
-                "MESSAGES_UPSERT",
-                "CONNECTION_UPDATE"
-            ],
-        }
+    webhook_secret = os.getenv("WEBHOOK_SECRET", "").strip()
+    webhook_cfg = {
+        "enabled": True,
+        "url": webhook_url,
+        "byEvents": False,
+        "base64": False,
+        "events": [
+            "MESSAGES_UPSERT",
+            "CONNECTION_UPDATE"
+        ],
     }
+    if webhook_secret:
+        webhook_cfg["headers"] = {"X-Webhook-Secret": webhook_secret}
+
+    payload = {"webhook": webhook_cfg}
     print(f"🔗 Configurando Webhook da instância para '{webhook_url}'...")
     resp = client.post(f"{base_url}/webhook/set/{instance_name}", headers=headers, json=payload)
     if resp.status_code in (200, 201):

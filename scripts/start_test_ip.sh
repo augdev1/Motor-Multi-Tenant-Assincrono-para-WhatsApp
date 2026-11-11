@@ -45,9 +45,9 @@ until [ "$ATTEMPT" -ge "$MAX_ATTEMPTS" ]; do
     ATTEMPT=$((ATTEMPT + 1))
 done
 
-# 4. Criação de tabelas e catálogo RAG
-echo ">>> [1/2] Inicializando tabelas do banco (app.init_db)..."
-docker compose -f "${COMPOSE_FILE}" exec -T api python -m app.init_db
+# 4. Migrações versionadas e catálogo RAG
+echo ">>> [1/2] Aplicando migrações Alembic (alembic upgrade head)..."
+docker compose -f "${COMPOSE_FILE}" exec -T api alembic upgrade head
 
 echo ">>> [2/2] Inserindo dados do tenant e catálogo RAG (app.seed_lanchonete)..."
 docker compose -f "${COMPOSE_FILE}" exec -T api python -m app.seed_lanchonete

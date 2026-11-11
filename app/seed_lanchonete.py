@@ -1,7 +1,8 @@
 import asyncio
 import uuid
 from sqlalchemy import select, text
-from app.database import engine, AsyncSessionLocal, generate_mock_embedding
+from app.database import engine, AsyncSessionLocal
+from app.embeddings import generate_semantic_embedding
 from app.models import Base, Company, KnowledgeChunk
 
 
@@ -148,15 +149,16 @@ async def seed_lanchonete():
             },
         ]
 
-        chunks_to_insert = [
-            KnowledgeChunk(
-                company_id=pizzaria.id,
-                content=item["content"],
-                metadata_info=item["meta"],
-                embedding=generate_mock_embedding(item["content"]),
+        chunks_to_insert = []
+        for item in rag_items:
+            chunks_to_insert.append(
+                KnowledgeChunk(
+                    company_id=pizzaria.id,
+                    content=item["content"],
+                    metadata_info=item["meta"],
+                    embedding=await generate_semantic_embedding(item["content"]),
+                )
             )
-            for item in rag_items
-        ]
 
         db.add_all(chunks_to_insert)
         await db.commit()
