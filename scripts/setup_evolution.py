@@ -107,6 +107,37 @@ def configure_webhook(client: httpx.Client, base_url: str, api_key: str, instanc
         return False
 
 
+def configure_instance_settings(client: httpx.Client, base_url: str, api_key: str, instance_name: str) -> bool:
+    """
+    Configura higiene de sessão e regras anti-banimento na Evolution API v2:
+    - alwaysOnline=False (não parecer robô 24h travado online)
+    - syncFullHistory=False (evita handshake pesado que aciona filtros da Meta)
+    - groupsIgnore=True (ignora ruídos de grupos)
+    - rejectCall=True (rejeição automática de chamadas de voz com aviso em texto)
+    """
+    headers = {"apikey": api_key, "Content-Type": "application/json"}
+    payload = {
+        "rejectCall": True,
+        "msgCall": "As chamadas de voz e vídeo não são atendidas por este canal. Por favor, envie sua mensagem por texto para fazer o seu pedido!",
+        "groupsIgnore": True,
+        "alwaysOnline": False,
+        "readMessages": False,
+        "readStatus": False,
+        "syncFullHistory": False,
+    }
+    print(f"🛡️ Configurando parâmetros de higiene e proteção anti-bloqueio para '{instance_name}'...")
+    try:
+        resp = client.post(f"{base_url}/settings/set/{instance_name}", headers=headers, json=payload)
+        if resp.status_code in (200, 201):
+            print("✅ Higiene de sessão configurada com sucesso (alwaysOnline: false, syncFullHistory: false)!")
+            return True
+        else:
+            print(f"⚠️ Resposta da configuração de settings ({resp.status_code}): {resp.text}")
+    except Exception as exc:
+        print(f"⚠️ Erro ao aplicar settings anti-banimento: {exc}")
+    return False
+
+
 def fetch_and_display_qrcode(client: httpx.Client, base_url: str, api_key: str, instance_name: str, output_path: str) -> None:
     """Obtém o QR Code, salva em arquivo de imagem e renderiza em ASCII no terminal."""
     headers = {"apikey": api_key}
@@ -190,7 +221,10 @@ def main():
         # 3. Configura Webhook
         configure_webhook(client, args.api_url, args.api_key, args.instance_name, args.webhook_url)
 
-        # 4. Obtém e renderiza QR Code
+        # 4. Configura Higiene de Sessão e Anti-Banimento
+        configure_instance_settings(client, args.api_url, args.api_key, args.instance_name)
+
+        # 5. Obtém e renderiza QR Code
         fetch_and_display_qrcode(client, args.api_url, args.api_key, args.instance_name, args.output_image)
 
 

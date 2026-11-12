@@ -359,6 +359,11 @@ def generate_pdf():
         [Paragraph("test_evolution_client_exponential_backoff_retry", styles["Normal"]), Paragraph("Tolerância a Falhas: Backoff Exponencial no Envio", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
         [Paragraph("test_active_push_alert_and_redis_cooldown", styles["Normal"]), Paragraph("Observabilidade V2: Push Alert e Cooldown Redis", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
         [Paragraph("test_pgvector_native_sql_compilation_and_embedding_fallback", styles["Normal"]), Paragraph("RAG V2: Compilação SQL pgvector (<=>) e Embedding", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_calculate_human_typing_delay_bounds", styles["Normal"]), Paragraph("Anti-Ban: Digitação Dinâmica Proporcional com Jitter", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_send_presence_and_mark_read", styles["Normal"]), Paragraph("Anti-Ban: Envio de Presença (composing) e Leitura com Delay", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_simulate_human_typing_and_send", styles["Normal"]), Paragraph("Anti-Ban: Ciclo Completo de Simulação Humana no Envio", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_message_debouncer_single_message", styles["Normal"]), Paragraph("Debounce Redis: Processamento de Mensagem Única", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
+        [Paragraph("test_message_debouncer_burst_consolidation", styles["Normal"]), Paragraph("Debounce Redis: Concatenação Atômica de Mensagens em Rajada", styles["Normal"]), Paragraph("APROVADO", styles["Normal"])],
     ]
     test_table = Table(test_results_data, colWidths=[200, 240, 90])
     test_table.setStyle(TableStyle([

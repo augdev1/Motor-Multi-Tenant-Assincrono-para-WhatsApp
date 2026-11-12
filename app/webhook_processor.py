@@ -12,9 +12,14 @@ from app.database import (
     EventDeduplicator,
     LockContentionError,
 )
-from app.evolution_client import fetch_evolution_media_base64, send_whatsapp_message
+from app.evolution_client import (
+    fetch_evolution_media_base64,
+    send_whatsapp_message,
+    simulate_human_typing_and_send,
+)
 from app.graph import build_bot_graph
 from app.logging_config import log_audit_event
+from app.message_buffer import MessageDebouncer
 from app.models import AuditLog, Company, OrderRecord
 from app.schemas import BotState, EvolutionMessagePayload
 from app.vision import extract_receipt_info
@@ -28,11 +33,30 @@ async def _dispatch_message(
     phone_number: str,
     text: str,
     await_send: bool = False,
+    remote_jid: Optional[str] = None,
+    message_id: Optional[str] = None,
+    simulate_presence: bool = True,
 ) -> bool:
-    """Envia mensagem ao WhatsApp de forma bloqueante (worker) ou em background (HTTP inline)."""
+    """Envia mensagem ao WhatsApp com simulação humana de digitação e presença."""
     if await_send:
-        return await send_whatsapp_message(instance_name, phone_number, text)
-    asyncio.create_task(send_whatsapp_message(instance_name, phone_number, text))
+        return await simulate_human_typing_and_send(
+            instance_name=instance_name,
+            phone_number=phone_number,
+            text=text,
+            remote_jid=remote_jid,
+            message_id=message_id,
+            simulate_presence=simulate_presence,
+        )
+    asyncio.create_task(
+        simulate_human_typing_and_send(
+            instance_name=instance_name,
+            phone_number=phone_number,
+            text=text,
+            remote_jid=remote_jid,
+            message_id=message_id,
+            simulate_presence=simulate_presence,
+        )
+    )
     return True
 
 
@@ -87,6 +111,22 @@ async def process_webhook_payload(
         }
 
     company_id = company.id
+
+    # 2.5 Debounce e Consolidação de Mensagens Picadas no Redis
+    if not payload.is_image_or_document() and text and redis:
+        debouncer = MessageDebouncer(redis)
+        should_process, consolidated_text = await debouncer.buffer_inbound_message(
+            company_id=company_id,
+            phone_number=phone_number,
+            text=text,
+        )
+        if not should_process:
+            return status.HTTP_200_OK, {
+                "status": "buffered",
+                "reason": "consolidated_with_later_message",
+                "phone_number": phone_number,
+            }
+        text = consolidated_text
 
     # 3. Distributed Lock por cliente e tenant
     lock = None
@@ -187,9 +227,23 @@ async def process_webhook_payload(
                             f"📦 ITENS PARA PRODUÇÃO:\n{itens_desc}\n"
                             "────────────────────────────────────────"
                         )
-                        await _dispatch_message(instance_name, cozinha_phone, comanda_cozinha, await_send=await_send)
+                        await _dispatch_message(
+                            instance_name,
+                            cozinha_phone,
+                            comanda_cozinha,
+                            await_send=await_send,
+                            simulate_presence=False,
+                        )
 
-                    await _dispatch_message(instance_name, phone_number, bot_response, await_send=await_send)
+                    await _dispatch_message(
+                        instance_name,
+                        phone_number,
+                        bot_response,
+                        await_send=await_send,
+                        remote_jid=payload.get_remote_jid(),
+                        message_id=message_id,
+                        simulate_presence=True,
+                    )
 
                     return status.HTTP_200_OK, {
                         "status": "processed",
@@ -203,7 +257,15 @@ async def process_webhook_payload(
                         "Recebemos a sua imagem, mas não conseguimos identificar um comprovante de pagamento válido nela. "
                         "Por favor, envie uma foto ou print nítido do comprovante Pix onde apareça o valor e a data legíveis!"
                     )
-                    await _dispatch_message(instance_name, phone_number, bot_response, await_send=await_send)
+                    await _dispatch_message(
+                        instance_name,
+                        phone_number,
+                        bot_response,
+                        await_send=await_send,
+                        remote_jid=payload.get_remote_jid(),
+                        message_id=message_id,
+                        simulate_presence=True,
+                    )
                     return status.HTTP_200_OK, {
                         "status": "processed",
                         "receipt_verified": False,
@@ -228,7 +290,15 @@ async def process_webhook_payload(
             bot_response = bot_response.replace("*", "")
 
         if bot_response:
-            sent = await _dispatch_message(instance_name, phone_number, bot_response, await_send=await_send)
+            sent = await _dispatch_message(
+                instance_name,
+                phone_number,
+                bot_response,
+                await_send=await_send,
+                remote_jid=payload.get_remote_jid(),
+                message_id=message_id,
+                simulate_presence=True,
+            )
             if await_send and not sent:
                 dlq_audit = AuditLog(
                     company_id=company_id,

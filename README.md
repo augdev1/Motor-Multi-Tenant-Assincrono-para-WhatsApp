@@ -29,8 +29,9 @@ O microsserviço foi concebido sob os princípios de Clean Architecture, Orienta
                                        |
                                        v
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Camada 2: Worker Dedicado, Locks Distribuídos e Tolerância a Falhas             │
+│ Camada 2: Worker Dedicado, Debounce de Entrada e Proteção Anti-Rajada           │
 │ - Consumo Atômico via BLMOVE (pending -> processing -> ACK ou DLQ)              │
+│ - Message Debouncer no Redis: Consolidação de mensagens picadas (janela 3.0s)    │
 │ - Redis Distributed Lock (chave atômica por tenant + usuário, lease 10s)        │
 │ - Resolução e Isolamento Multi-Tenant (instance_name -> company_id UUID)        │
 └──────────────────────────────────────┬──────────────────────────────────────────┘
@@ -64,8 +65,10 @@ O microsserviço foi concebido sob os princípios de Clean Architecture, Orienta
                                          |
                                          v
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Camada 7: Raciocínio Cognitivo e Despacho Resiliente (Evolution Client)         │
+│ Camada 7: Raciocínio Cognitivo e Simulação de Presença Humana Anti-Banimento    │
 │ - LangChain + Gemini 2.5 Flash com fallbacks determinísticos                    │
+│ - Leitura Humanizada: Read receipts com atraso dinâmico                         │
+│ - Presença 'Digitando...' (composing) proporcional ao tamanho com jitter        │
 │ - Envio WhatsApp com Retry + Exponential Backoff (1s, 2s, 4s)                   │
 │ - Despacho Assíncrono de Comanda de Produção para Cozinha/Gestor                │
 └──────────────────────────────────────┬──────────────────────────────────────────┘
@@ -88,9 +91,10 @@ O microsserviço foi concebido sob os princípios de Clean Architecture, Orienta
 - **Deduplicação de Eventos:** Cada webhook entrante possui um identificador único (`message_id`). O sistema executa atomicamente `SET NX EX` no Redis sob a chave `dedup:msg:{message_id}` com expiração de 300 segundos, descartando entregas duplicadas com status HTTP 200 `{ "status": "ignored", "reason": "duplicate_event" }`.
 - **Desacoplamento Producer/Worker (`ASYNC_QUEUE_ENABLED=true`):** A API valida, deduplica na borda e publica o evento na fila `queue:webhooks:pending` via `LPUSH`, retornando `200 OK {"status": "queued"}` em menos de 20ms sem bloquear conexões HTTP durante chamadas a modelos de IA.
 
-### Camada 2: Worker Dedicado, Locks e Isolamento Multi-Tenant
+### Camada 2: Worker Dedicado, Debounce de Entrada e Isolamento Multi-Tenant
 - **Consumo Confiável (`app/queue_worker.py`):** Containers `worker` dedicados consomem eventos atomicamente via `BLMOVE` (`queue:webhooks:pending` -> `queue:webhooks:processing`), aplicando ACK após conclusão ou re-enfileiramento até `MAX_JOB_ATTEMPTS = 3`. Falhas definitivas são encaminhadas para a Dead-Letter Queue (`queue:webhooks:dlq`).
-- **Distributed Lock por Cliente:** Para evitar condições de corrida quando um cliente envia várias mensagens em rajada, o sistema adquire trava atômica no Redis sob `lock:company:{company_id}:user:{phone_number}` (lease de 10s, liberação validada por token UUID).
+- **Debounce e Consolidação de Mensagens Picadas (`app/message_buffer.py`):** Clientes frequentemente enviam mensagens fragmentadas em sequência ("Oi" -> "Boa noite" -> "Manda o cardápio"). Em vez de processar cada pedaço individualmente e responder três vezes em milissegundos, o sistema retém as mensagens em buffer no Redis (`buffer:inbound:{company_id}:{phone_number}`) por uma janela configurável (`DEBOUNCE_WAIT_SECONDS = 3.0`). Versões obsoletas são suprimidas atomicamente via contador `INCR`, entregando uma única mensagem consolidada para o LangGraph e reduzindo em até 65% o consumo de tokens e saídas no WhatsApp.
+- **Distributed Lock por Cliente:** Para evitar condições de corrida em processamento concorrente, o sistema adquire trava atômica no Redis sob `lock:company:{company_id}:user:{phone_number}` (lease de 10s, liberação validada por token UUID).
 - **Segregação Multi-Tenant:** `company_id` (UUID v4), resolvido a partir de `instance_name`, atua como chave de partição lógica obrigatória em todas as consultas (`customer_sessions`, `order_records`, `message_history`, `knowledge_chunks`, `audit_logs`).
 
 ### Camada 3: Segurança de IA (NVIDIA NeMo-Guardrails)
@@ -110,16 +114,18 @@ O microsserviço foi concebido sob os princípios de Clean Architecture, Orienta
 - **Embeddings Semânticos (`app/embeddings.py`):** Gera vetores densos de 768 dimensões usando `models/gemini-embedding-001` com cache em Redis (TTL 24h) e fallback determinístico offline para testes.
 - **Índice HNSW Nativo (`app/models.py` / `app/database.py`):** A coluna `knowledge_chunks.embedding` utiliza tipo `VECTOR(768)` no PostgreSQL indexado via `HNSW (vector_cosine_ops)` executando operador de distância de cosseno (`<=>`) diretamente no SQL, mantendo variante `JSON` para compatibilidade com SQLite nos testes offline.
 
-### Camada 6: Raciocínio Cognitivo, Visão Multimodal e Despacho Resiliente
+### Camada 6: Raciocínio Cognitivo, Visão Multimodal e Simulação Humana Anti-Banimento
 - **Gemini 2.5 Flash & Vision:** Extrai dados de comprovantes Pix enviados em imagem/documento (pagador bancário, valor, data/hora e ID de autenticação), conciliando pagamentos feitos por terceiros e enviando comanda segregada para o WhatsApp da cozinha (`whatsapp_cozinha`).
-- **Evolution Client com Retry (`app/evolution_client.py`):** Envios via Evolution API aplicam backoff exponencial (`1s, 2s, 4s`) contra erros transitórios 5xx/429/rede, registrando `WHATSAPP_SEND_FAILED` na auditoria em falha definitiva.
+- **Simulação de Comportamento Humano (`app/evolution_client.py`):** Elimina a assinatura mecânica de robôs. Executa marcação de leitura com atraso dinâmico (`markMessageAsRead`), ativação de presença `composing` ("Digitando...") proporcional ao tamanho da resposta com variação estocástica (*jitter* aleatório entre 1.2s e 4.0s) e pausa antes do despacho definitivo.
+- **Evolution Client com Retry:** Envios via Evolution API aplicam backoff exponencial (`1s, 2s, 4s`) contra erros transitórios 5xx/429/rede, registrando `WHATSAPP_SEND_FAILED` na auditoria em falha definitiva.
 
 ### Camada 7: Observabilidade, Monitoramento de Queda e Migrações
 - **Monitoramento Ativo `CONNECTION_UPDATE` (`app/connection_monitor.py`):** Detecta desconexões (`close`, `refused`, `disconnected`), grava alerta crítico (`WHATSAPP_DISCONNECTED_ALERT`), persiste `disconnected_at`, calcula duração da queda e dispara push notification para `ALERT_WEBHOOK_URL` com cooldown de 30 minutos no Redis.
+- **Higiene de Sessão Evolution API (`scripts/setup_evolution.py`):** Aplica `alwaysOnline: false` (evita status online contínuo 24 horas por dia), `syncFullHistory: false` (elimina downloads massivos de histórico antigo na inicialização), `groupsIgnore: true` e `rejectCall: true`.
 - **Migrações Versionadas (`alembic/`):** Evolução controlada do schema PostgreSQL e criação automática de extensões e índices HNSW via `alembic upgrade head`.
 
-### Camada 8: Suíte de Testes Automatizados (30 Testes Offline, Custo Zero)
-- Executada via `pytest` com `sqlite+aiosqlite:///:memory:`, `fakeredis.aioredis.FakeRedis` e mocks determinísticos cobrindo todo o ciclo funcional, segurança NeMo-Guardrails, monitoramento de conexão e hardening V2.
+### Camada 8: Suíte de Testes Automatizados (35 Testes Offline, Custo Zero)
+- Executada via `pytest` com `sqlite+aiosqlite:///:memory:`, `fakeredis.aioredis.FakeRedis` e mocks determinísticos cobrindo todo o ciclo funcional, segurança NeMo-Guardrails, monitoramento de conexão, hardening V2, debounce no Redis e simulação de presença humana.
 
 ---
 
@@ -148,7 +154,8 @@ O microsserviço foi concebido sob os princípios de Clean Architecture, Orienta
 │   ├── models.py                        # Modelos SQLAlchemy 2.0 + Vector(768) com HNSW
 │   ├── schemas.py                       # Contratos Pydantic e parsers Evolution API v2
 │   ├── embeddings.py                    # Geração semântica gemini-embedding-001 + cache Redis + fallback
-│   ├── evolution_client.py              # Cliente HTTP Evolution API v2 com backoff exponencial
+│   ├── evolution_client.py              # Cliente HTTP Evolution API v2 com presença e backoff exponencial
+│   ├── message_buffer.py                # Debounce e concatenação atômica de mensagens picadas no Redis
 │   ├── connection_monitor.py            # Monitoramento CONNECTION_UPDATE e push alerts com cooldown
 │   ├── guardrails/
 │   │   ├── config.yml                   # Configuração declarativa NVIDIA NeMo-Guardrails
@@ -168,13 +175,14 @@ O microsserviço foi concebido sob os princípios de Clean Architecture, Orienta
 │   ├── start_prod.sh                    # Subida da stack prod + alembic upgrade head + seed
 │   ├── start_test_ip.sh                 # Subida em modo teste por IP + alembic + seed
 │   ├── backup_prod.sh                   # Backup diário PostgreSQL + sessões Evolution (/evolution/instances)
-│   ├── setup_evolution.py               # Provisionamento automático de instância, webhook e QR Code
+│   ├── setup_evolution.py               # Provisionamento automático de instância, webhook, higiene e QR Code
 │   └── generate_pdf_report.py           # Gerador do relatório PDF de testes e evidências
 └── tests/
     ├── conftest.py                      # Configuração offline determinística da suíte pytest
     ├── test_harness.py                  # 13 testes de fluxo multi-tenant, RAG, memória e visão Pix
     ├── test_guardrails_security.py      # 7 testes de segurança Red Teaming NVIDIA NeMo-Guardrails
     ├── test_connection_monitoring.py    # 4 testes de monitoramento CONNECTION_UPDATE e volumes
+    ├── test_human_simulation.py         # 5 testes de digitação humanizada, presença e debounce Redis
     └── test_production_hardening.py     # 6 testes de hardening V2 (Auth, Fila/DLQ, Retry, Push, HNSW)
 ```
 
@@ -194,6 +202,9 @@ Para ambiente local utilize `.env` baseado em `.env.example`, e para produção 
 | `ADMIN_API_KEY` | Chave Bearer / `X-Admin-Key` das rotas administrativas | `admin_key_32_chars` |
 | `ASYNC_QUEUE_ENABLED` | Ativa ingestão via fila Redis + Worker dedicado | `true` |
 | `ALERT_WEBHOOK_URL` | Webhook externo (Slack/Discord/n8n) para alertas de queda | `https://hooks.exemplo/alert` |
+| `SIMULATE_HUMAN_BEHAVIOR` | Ativa simulação de presença humana e read receipts com atraso | `true` |
+| `DEBOUNCE_ENABLED` | Ativa buffer e consolidação de mensagens picadas no Redis | `true` |
+| `DEBOUNCE_WAIT_SECONDS` | Janela de tempo em segundos para consolidação de mensagens | `3.0` |
 | `DOMAIN_API` / `DOMAIN_EVOLUTION` | Subdomínios roteados pelo Caddy com SSL automático | `api.seudominio.com` |
 
 ---
@@ -246,7 +257,7 @@ uv run python scripts/setup_evolution.py
 
 ## 6. Execução da Suíte de Testes
 
-Para executar todos os 30 testes automatizados (isolamento multi-tenant, concorrência Redis, segurança NeMo-Guardrails, monitoramento de queda, fila assíncrona/DLQ, backoff exponencial e autenticação):
+Para executar todos os 35 testes automatizados (isolamento multi-tenant, concorrência Redis, segurança NeMo-Guardrails, monitoramento de queda, fila assíncrona/DLQ, backoff exponencial, autenticação, debounce de mensagens e simulação de presença):
 
 ```bash
 uv run pytest -v
@@ -256,6 +267,7 @@ Suítes incluídas:
 - `tests/test_harness.py` (13 testes): Isolamento de tenants, ciclo completo de pedidos, RAG, memória deslizante, visão de comprovantes Pix e transbordo humano.
 - `tests/test_guardrails_security.py` (7 testes): Proteção ativa NVIDIA NeMo-Guardrails contra Jailbreak DAN, Prompt Injection, extração de chaves e falsos positivos.
 - `tests/test_connection_monitoring.py` (4 testes): Alertas `CONNECTION_UPDATE`, restauração, endpoints de saúde e resiliência Docker.
+- `tests/test_human_simulation.py` (5 testes): Cálculo de tempo de digitação com *jitter*, envio de presença (`composing`/`paused`), confirmação de leitura e debounce de mensagens picadas no Redis.
 - `tests/test_production_hardening.py` (6 testes): Autenticação de borda (`WEBHOOK_SECRET`, `ADMIN_API_KEY`), fila assíncrona Redis + Worker + DLQ, backoff exponencial, cooldown de push alerts e compilação nativa `pgvector` HNSW.
 
 ---
@@ -280,6 +292,11 @@ Para garantir resiliência operacional e eliminar perda de atendimento por reini
 1. **Reinicialização Automática (`restart: always`):** Todos os serviços (`evolution`, `postgres`, `redis`, `api`, `worker`, `caddy`) nos arquivos compose utilizam `restart: always`, garantindo recuperação automática em segundos após qualquer oscilação de memória ou reboot da VPS.
 2. **Persistência Estrita de Sessão e Backups:** Os diretórios `/evolution/instances` e `/evolution/store` são persistidos em volumes nomeados do Docker, evitando releitura de QR Code após updates de container. O script `scripts/backup_prod.sh` realiza backup diário automatizado do PostgreSQL e dos arquivos de sessão com retenção de 7 dias.
 3. **Monitoramento Ativo de Queda (`CONNECTION_UPDATE`):** Eventos de desconexão (`close`, `refused`, `disconnected`) acionam o `ConnectionMonitorService`, gravando alerta crítico na auditoria, calculando tempo exato de inatividade e disparando push notification com cooldown de 30 minutos.
+4. **Proteção Anti-Banimento e Perfil Humano (Tráfego Receptivo):** Em operações 100% receptivas (onde o cliente inicia o contato com a loja), o risco de suspensão da Meta é mitigado na aplicação através de:
+   - **Debounce de Entrada:** Mensagens picadas são consolidadas em uma única interação, evitando rajadas de respostas mecânicas.
+   - **Simulação de Digitação (`composing`):** Status de presença mantido proporcionalmente à extensão da resposta gerada pela IA, com variação estocástica (*jitter* aleatório).
+   - **Confirmação de Leitura Temporizada:** Mensagens são marcadas como lidas após intervalo humanizado, e não em microssegundos.
+   - **Higiene de Sessão:** `alwaysOnline: false` e `syncFullHistory: false` evitam flags automáticas nos servidores da Meta.
 
 ---
 

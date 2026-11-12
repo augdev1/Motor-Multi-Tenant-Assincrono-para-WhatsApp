@@ -275,3 +275,4 @@ async def test_pgvector_native_sql_compilation_and_embedding_fallback():
     dist_expr = KnowledgeChunk.embedding.cosine_distance(vec)
     compiled_sql = str(dist_expr.compile(dialect=postgresql.dialect()))
     assert "<=>" in compiled_sql
+

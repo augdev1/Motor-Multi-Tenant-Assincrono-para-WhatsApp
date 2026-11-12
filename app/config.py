@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     ALERT_WEBHOOK_URL: Optional[str] = None
     USE_REAL_EMBEDDINGS: bool = True
 
+    # Proteção anti-banimento e simulação de comportamento humano
+    SIMULATE_HUMAN_BEHAVIOR: bool = True
+    HUMAN_MIN_TYPING_DELAY: float = 1.2
+    HUMAN_MAX_TYPING_DELAY: float = 4.0
+    DEBOUNCE_ENABLED: bool = True
+    DEBOUNCE_WAIT_SECONDS: float = 3.0
+
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
 

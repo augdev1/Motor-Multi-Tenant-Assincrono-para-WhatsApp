@@ -50,3 +50,4 @@ async def verify_admin_api_key(request: Request) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Chave administrativa (ADMIN_API_KEY) inválida ou ausente.",
         )
+

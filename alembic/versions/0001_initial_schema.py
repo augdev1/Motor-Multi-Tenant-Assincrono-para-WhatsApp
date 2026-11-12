@@ -138,3 +138,4 @@ def downgrade() -> None:
 
     op.drop_index("ix_companies_instance_name", table_name="companies")
     op.drop_table("companies")
+
